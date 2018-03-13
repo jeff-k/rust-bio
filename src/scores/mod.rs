@@ -9,9 +9,11 @@ pub use self::pam40::pam40;
 pub use self::pam120::pam120;
 pub use self::pam200::pam200;
 pub use self::pam250::pam250;
+pub use self::hiv25::hiv25;
 
 pub mod blosum62;
 pub mod pam40;
 pub mod pam120;
 pub mod pam200;
 pub mod pam250;
+pub mod hiv25;
