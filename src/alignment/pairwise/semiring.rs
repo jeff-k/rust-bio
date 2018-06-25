@@ -9,7 +9,7 @@ use geo::algorithm::convexhull;
 use Tropical::*;
 
 trait Semiring: Mul<Output=Self> + Add<Output=Self> + Sized {
-    // additive identity, multiplicative absorptive
+    // additive identity, multiplicative absorbing
     fn identity() -> Self;
 }
 
@@ -55,7 +55,7 @@ struct Viterbi {
 }
 
 // Polytope semiring for parametric alignment
-// nb. in one dimension this is the tropical semiring
+// nb. in one dimension this is the tropical semiring (well, it should be)
 
 fn union(a: Polygon<f64>, b: Polygon<f64>) {
     // union of polygons
@@ -108,6 +108,7 @@ fn levenshtein(op: Op<u8>) -> Tropical {
     }
 }
 
+// polytope propagation
 fn polyprop() -> Polytope {
     // construct alignment polytope
     let (gap, mismatch) = (1, 1);
@@ -130,8 +131,8 @@ fn align<T: Semiring + Copy + Clone + Debug>
     let mut row: Vec<Vec<T>> = vec![vec![T::identity()];seq2.len()];
     row[0][0] = score(Op::M(seq1[0], seq2[0]));
 
-    // defining the boundary condition and recursive structure, which is
-    // further generalized with generalized algebraic dynamic proramming
+    // defining the boundary condition and recursive structure, which could
+    // be further generalized with algebraic dynamic proramming
     for j in 1..seq2.len() {
         for i in 1..seq1.len() {
             row[i][j]
