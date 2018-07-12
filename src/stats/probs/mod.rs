@@ -14,7 +14,7 @@ use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
 use itertools::Itertools;
 use itertools_num::linspace;
-use num_traits::Float;
+use num_traits::{Float, Zero};
 use ordered_float::NotNaN;
 
 /// A factor to convert log-probabilities to PHRED-scale (phred = p * `LOG_TO_PHRED_FACTOR`).
@@ -280,10 +280,10 @@ impl LogProb {
     }
 
     /// Integrate numerically stable over given log-space density in the interval [a, b]. Uses the trapezoidal rule with n grid points.
-    pub fn ln_trapezoidal_integrate_exp<T, D>(density: &D, a: T, b: T, n: usize) -> LogProb
+    pub fn ln_trapezoidal_integrate_exp<T, D>(mut density: D, a: T, b: T, n: usize) -> LogProb
     where
         T: Copy + Add<Output = T> + Sub<Output = T> + Div<Output = T> + Mul<Output = T> + Float,
-        D: Fn(T) -> LogProb,
+        D: FnMut(T) -> LogProb,
         f64: From<T>,
     {
         let mut probs = linspace(a, b, n)
@@ -299,10 +299,10 @@ impl LogProb {
     }
 
     /// Integrate numerically stable over given log-space density in the interval [a, b]. Uses Simpson's rule with n (odd) grid points.
-    pub fn ln_simpsons_integrate_exp<T, D>(density: &D, a: T, b: T, n: usize) -> LogProb
+    pub fn ln_simpsons_integrate_exp<T, D>(mut density: D, a: T, b: T, n: usize) -> LogProb
     where
         T: Copy + Add<Output = T> + Sub<Output = T> + Div<Output = T> + Mul<Output = T> + Float,
-        D: Fn(T) -> LogProb,
+        D: FnMut(T) -> LogProb,
         f64: From<T>,
     {
         assert_eq!(n % 2, 1, "n must be odd");
@@ -412,6 +412,36 @@ impl Default for PHREDProb {
     }
 }
 
+impl Zero for Prob {
+    fn zero() -> Self {
+        Prob(0.0)
+    }
+
+    fn is_zero(&self) -> bool {
+        **self == 0.0
+    }
+}
+
+impl Zero for LogProb {
+    fn zero() -> Self {
+        LogProb::ln_zero()
+    }
+
+    fn is_zero(&self) -> bool {
+        self.is_infinite() && self.signum() < 0.0
+    }
+}
+
+impl Zero for PHREDProb {
+    fn zero() -> Self {
+        PHREDProb::from(Prob(0.0))
+    }
+
+    fn is_zero(&self) -> bool {
+        *self == Self::zero()
+    }
+}
+
 quick_error! {
     #[derive(Debug)]
     pub enum ProbError {
@@ -480,14 +510,14 @@ mod tests {
     #[test]
     fn test_trapezoidal_integrate() {
         let density = |_| LogProb(0.1f64.ln());
-        let prob = LogProb::ln_trapezoidal_integrate_exp(&density, 0.0, 10.0, 5);
+        let prob = LogProb::ln_trapezoidal_integrate_exp(density, 0.0, 10.0, 5);
         assert_relative_eq!(*prob, *LogProb::ln_one(), epsilon = 0.0000001);
     }
 
     #[test]
     fn test_simpsons_integrate() {
         let density = |_| LogProb(0.1f64.ln());
-        let prob = LogProb::ln_simpsons_integrate_exp(&density, 0.0, 10.0, 5);
+        let prob = LogProb::ln_simpsons_integrate_exp(density, 0.0, 10.0, 5);
         assert_relative_eq!(*prob, *LogProb::ln_one(), epsilon = 0.0000001);
     }
 
@@ -515,5 +545,12 @@ mod tests {
             LogProb::ln_one().ln_add_exp(LogProb::ln_zero()),
             LogProb::ln_one()
         );
+    }
+
+    #[test]
+    fn test_zero() {
+        assert!(LogProb::zero().is_zero());
+        assert!(Prob::zero().is_zero());
+        assert!(PHREDProb::zero().is_zero());
     }
 }
