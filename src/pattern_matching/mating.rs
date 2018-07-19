@@ -29,7 +29,7 @@
 
 use std::cmp;
 
-// return the highest scoring overlap length if possible
+// return the highest scoring overlap length above a threshold
 pub fn mate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: i16) -> Option<usize> {
     let max_overlap = cmp::min(r1.len(), r2.len());
     let min_overlap = overlap_bound - 1;
@@ -37,6 +37,25 @@ pub fn mate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: i16) -> Optio
     let mut overlap: usize = 0;
     for i in min_overlap..max_overlap {
         let h = score(&r2[0..i], &r1[r1.len()-i..r1.len()]);
+        if h > m {
+            m = h;
+            overlap = i;
+        }
+    }
+    if m >= min_score {
+        return Some(overlap)
+    }
+    None
+}
+
+// mating function using the Hamming rate
+pub fn mate_hamming_rate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: i16) -> Option<usize> {
+    let max_overlap = cmp::min(r1.len(), r2.len());
+    let min_overlap = overlap_bound - 1;
+    let mut m: i16 = 0;
+    let mut overlap: usize = 0;
+    for i in min_overlap..max_overlap {
+        let h = hamming(&r2[0..i], &r1[r1.len()-i..r1.len()]) / i;
         if h > m {
             m = h;
             overlap = i;
@@ -60,11 +79,6 @@ fn score(r1: &[u8], r2: &[u8]) -> i16 {
     }
     s
 }
-
-// prototypical overlap mending function that replaces the bases with '-'
-//fn z(a: u8, b: u8) -> u8 {
-//    b'-'
-//}
 
 // strict overlap mending that reports 'N' on disagreement
 fn mend_consensus(a: u8, b: u8) -> u8 {
