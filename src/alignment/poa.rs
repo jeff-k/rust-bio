@@ -51,6 +51,7 @@ pub enum Op {
     Match(Option<(usize, usize)>),
     Del(Option<(usize, usize)>),
     Ins(Option<usize>),
+    Fs(Option<usize>),
 }
 
 pub struct Alignment {
@@ -87,6 +88,22 @@ impl PartialEq for Cell {
 }
 
 impl Eq for Cell {}
+
+fn nscore(a: u8, b: u8, c: u8, r: u8) -> Cell {
+    let m = t[a][b][c] == r;
+
+    // cases of deletion from query
+    let fs = t[b'N'][a][b] == r;
+    let fs = t[a][b'N'][b] == r;
+    let fs = t[a][b][b'N'] == r;
+
+    let fs = t[a][][]
+    let fs = t[][a][]
+    let fs = t[][][a]
+    
+    // cases of insertion into query
+
+}
 
 impl Aligner {
     pub fn new() -> Self {
