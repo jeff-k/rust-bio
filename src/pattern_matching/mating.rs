@@ -1,4 +1,4 @@
-// Copyright 2018 Jeff K
+// Copyright 2018 github.com/jeff-k
 // Licensed under the MIT license (http://opensource.org/licenses/MIT)
 // This file may not be copied, modified, or distributed
 // except according to those terms.
@@ -25,7 +25,7 @@
 //!
 //! We also need to define the scores for which mating is acceptible. The
 //! minimum overlap score and minimum overlap length could be guessed
-//! from the k-mer distribution.
+//! from the k-mer distribution. 25bp is the apparent standard.
 
 use std::cmp;
 
@@ -55,7 +55,8 @@ pub fn mate_hamming_rate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: 
     let mut m: i16 = 0;
     let mut overlap: usize = 0;
     for i in min_overlap..max_overlap {
-        let h = hamming(&r2[0..i], &r1[r1.len()-i..r1.len()]) / i;
+//        let h = hamming(&r2[0..i], &r1[r1.len()-i..r1.len()]) / i;
+        let h = 0;
         if h > m {
             m = h;
             overlap = i;
@@ -105,9 +106,19 @@ pub fn merge(r1: &[u8], r2: &[u8], overlap: usize) -> Vec<u8> {
     seq
 }
 
+pub fn truncate(r1: &[u8], r2: &[u8], overlap: usize) -> Vec<u8> {
+    let r2_end = r2.len();
+
+    let mut seq = vec![0; overlap];
+    for i in 0..overlap {
+        seq[(overlap - i) - 1] = mend_consensus(r1[(overlap - i) - 1], r2[(r2_end - i) - 1]);
+    }
+    seq
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{mate, merge};
+    use super::{mate, merge, truncate};
 
     #[test]
     fn test_mate_pair() {
@@ -148,4 +159,11 @@ mod tests {
         assert_eq!(mate(r1, r2, 12, 10).unwrap(), 20); 
         assert_eq!(mate(r1, r2, 12, 11), None);
     } 
+
+    #[test]
+    fn test_truncation() {
+        let r1 =       b"cgctgtcatgc";
+        let r2 = b"tcatgccgctgt";
+        assert_eq!(truncate(r1, r2, 6), b"cgctgt");
+    }
 }
