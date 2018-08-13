@@ -166,4 +166,13 @@ mod tests {
         let r2 = b"tcatgccgctgt";
         assert_eq!(truncate(r1, r2, 6), b"cgctgt");
     }
+
+    #[test]
+    fn test_overlap() {}
+
+    #[test]
+    fn test_readthrough() {}
+
+    #[test]
+    fn test_disjoint() {}
 }
