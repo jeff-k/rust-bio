@@ -24,6 +24,7 @@ use utils::{IntoTextIterator, TextIterator};
 pub mod dna;
 pub mod protein;
 pub mod rna;
+pub mod translation;
 
 pub type SymbolRanks = VecMap<u8>;
 
@@ -93,8 +94,7 @@ impl RankTransform {
     pub fn transform<'a, T: IntoTextIterator<'a>>(&self, text: T) -> Vec<u8> {
         text.into_iter()
             .map(|&c| {
-                *self
-                    .ranks
+                *self.ranks
                     .get(c as usize)
                     .expect("Unexpected character in text.")
             })
