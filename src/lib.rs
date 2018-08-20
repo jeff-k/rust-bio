@@ -86,6 +86,8 @@
 //!
 //! Documentation and further examples for each module can be found in the module descriptions below.
 
+extern crate bio_types;
+
 #[macro_use]
 extern crate approx;
 extern crate bit_set;
@@ -114,8 +116,8 @@ extern crate serde_derive;
 extern crate statrs;
 #[macro_use]
 extern crate bv;
-extern crate vec_map;
 extern crate petgraph;
+extern crate vec_map;
 
 pub mod alignment;
 pub mod alphabets;
