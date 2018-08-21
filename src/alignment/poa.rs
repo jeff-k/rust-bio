@@ -47,7 +47,7 @@ pub enum Op {
     Match(Option<(usize, usize)>),
     Del(Option<(usize, usize)>),
     Ins(Option<usize>),
-    Fs(Option<usize>),
+    Fs(i8),
 }
 
 pub struct Alignment {
@@ -144,21 +144,21 @@ impl Aligner {
             // iterate over the predecessors of this node
             let prevs: Vec<NodeIndex<usize>> = g.neighbors_directed(node, Incoming).collect();
             // query base and its index in the DAG (traceback matrix rows)
-            for (j_p, q) in query.iter().enumerate() {
+            let mut j_p: usize = 0;
+            //            for (j_p, q) in query.iter().enumerate() {
+            while j_p < query.len() - 1 {
                 let j = j_p + 1;
 
-                println!("{:?}", String::from_utf8_lossy(&query));
-                for fs in [0, 1, 2].iter() {
-                    if j + 5 >= query.len() {
-                    } else {
-                        let &protein = table1().translate(&query[j + fs..j + fs + 3]);
-                        println!(
-                            "\t{:?}+{:?}\t{:?}",
-                            j,
-                            fs,
-                            String::from_utf8_lossy(&[protein])
-                        );
-                    }
+                for fs in -1..1 {
+                    let &protein =
+                        table1().translate(&query[(j as i8 + fs) as usize..(j + fs as usize) + 3]);
+                    println!(
+                        "\t{:?}+{:?}\t{:?}",
+                        j,
+                        fs,
+                        String::from_utf8_lossy(&[protein])
+                    );
+                    let op = if fs == 0 { Op::Match(None) } else { Op::Fs(fs) };
                 }
 
                 // match and deletion scores for the first reference base
