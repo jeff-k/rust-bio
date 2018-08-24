@@ -146,16 +146,16 @@ impl Aligner {
             // query base and its index in the DAG (traceback matrix rows)
             let mut j_p: usize = 0;
             for (j_p, q) in query.iter().enumerate() {
-            //while j_p < query.len() - 1 {
+                //while j_p < query.len() - 1 {
                 let j = j_p + 1;
 
-//                for fs in -1..1 {
-//                    let &protein =
-//                        table1().translate(&query[(j as i8 + fs) as usize..(j + fs as usize) + 3]);
-//                        //String::from_utf8_lossy(&[protein])
-//                    );
-//                    let op = if fs == 0 { Op::Match(None) } else { Op::Fs(fs) };
-//                }
+                //                for fs in -1..1 {
+                //                    let &protein =
+                //                        table1().translate(&query[(j as i8 + fs) as usize..(j + fs as usize) + 3]);
+                //                        //String::from_utf8_lossy(&[protein])
+                //                    );
+                //                    let op = if fs == 0 { Op::Match(None) } else { Op::Fs(fs) };
+                //                }
 
                 // match and deletion scores for the first reference base
                 let (mat, del) = if prevs.len() == 0 {
@@ -358,7 +358,6 @@ impl POAGraph {
     }
 
     pub fn braid(&mut self, s1: TextSlice, s2: TextSlice) {
-
         let mut fs1p: NodeIndex<usize> = NodeIndex::new(0);
         let mut fs1pp: NodeIndex<usize> = NodeIndex::new(0);
 
@@ -367,8 +366,8 @@ impl POAGraph {
 
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
 
-//        let mut fs1_2: NodeIndex<usize> = NodeIndex::new(0);
-//        let mut fs2_2: NodeIndex<usize> = NodeIndex::new(0);
+        //        let mut fs1_2: NodeIndex<usize> = NodeIndex::new(0);
+        //        let mut fs2_2: NodeIndex<usize> = NodeIndex::new(0);
 
         let last = NodeIndex::new(self.graph.node_count() - 1);
         for i in 0..(self.graph.node_count() - 2) {
@@ -387,7 +386,7 @@ impl POAGraph {
                 self.graph.add_edge(fs1p, fs2, 1);
                 self.graph.add_edge(fs1p, fs1, 0);
                 self.graph.add_edge(fs2p, fs2, 0);
-           }
+            }
 
             self.graph.add_edge(prev, fs1, 1);
             self.graph.add_edge(prev, fs2, 2);
@@ -398,7 +397,6 @@ impl POAGraph {
             fs1p = fs1;
             fs2p = fs2;
             prev = node;
-
         }
         self.graph.add_edge(fs1p, last, 0);
         self.graph.add_edge(fs2p, last, 0);
@@ -447,8 +445,8 @@ fn dump_traceback(
 #[cfg(test)]
 mod tests {
     use alignment::poa::POAGraph;
-    use petgraph::graph::NodeIndex;
     use alphabets::translation::table1;
+    use petgraph::graph::NodeIndex;
 
     #[test]
     fn test_init_graph() {
@@ -551,15 +549,15 @@ mod tests {
 
     #[test]
     fn test_frameshift() {
-//        let dna1 = b"ACGTGCGGAATCGCGA";
+        //        let dna1 = b"ACGTGCGGAATCGCGA";
         let dna1 = b"^TCGSR$";
-//        let dna2 = b"CGTGCGGAATCGCGAN";
+        //        let dna2 = b"CGTGCGGAATCGCGAN";
         let dna2 = b"RADRX";
-//        let dna3 = b"GTGCGGAATCGCGANN";
+        //        let dna3 = b"GTGCGGAATCGCGANN";
         let dna3 = b"VRIAX";
-//        let f1 = table1().translate(dna1);
-//        let f2 = table1().translate(dna2);
-//        let f3 = table1().translate(dna3);
+        //        let f1 = table1().translate(dna1);
+        //        let f2 = table1().translate(dna2);
+        //        let f3 = table1().translate(dna3);
 
         let mut poa = POAGraph::new("seq", dna1);
         poa.braid(dna2, dna3);
@@ -570,6 +568,5 @@ mod tests {
         println!("{:?}", alignment.operations);
         assert!(false);
     }
-
 
 }
