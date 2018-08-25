@@ -45,8 +45,8 @@ pub struct POAGraph {
 #[derive(Debug, Clone)]
 pub enum Op {
     Match(Option<(usize, usize)>),
-    Del(Option<(usize, usize)>),
-    Ins(Option<usize>),
+    //Del(Option<(usize, usize)>),
+    //Ins(Option<usize>),
     Fs(i8),
 }
 
@@ -115,13 +115,13 @@ impl Aligner {
             // TODO: these should be -1 * distance from head node
             traceback[i][0] = TracebackCell {
                 score: -1 * i as i32,
-                op: Op::Del(None),
+                op: Op::Match(None),
             };
         }
         for j in 1..(n + 1) {
             traceback[0][j] = TracebackCell {
                 score: -1 * j as i32,
-                op: Op::Ins(None),
+                op: Op::Match(None),
             };
         }
 
@@ -157,8 +157,8 @@ impl Aligner {
                 //                    let op = if fs == 0 { Op::Match(None) } else { Op::Fs(fs) };
                 //                }
 
-                // match and deletion scores for the first reference base
-                let (mat, del) = if prevs.len() == 0 {
+                // match and frameshift scores for the first reference base
+                let (mat, fs) = if prevs.len() == 0 {
                     (
                         TracebackCell {
                             score: traceback[0][j - 1].score + (self.scoring)(r, *q),
@@ -166,7 +166,7 @@ impl Aligner {
                         },
                         TracebackCell {
                             score: traceback[0][j].score - 1i32,
-                            op: Op::Del(None),
+                            op: Op::Fs(0),
                         },
                     )
                 } else {
@@ -174,44 +174,48 @@ impl Aligner {
                         score: MIN_SCORE,
                         op: Op::Match(None),
                     };
-                    let mut del_max = TracebackCell {
+                    let mut fs_max = TracebackCell {
                         score: MIN_SCORE,
-                        op: Op::Del(None),
+                        op: Op::Fs(0),
                     };
+
+                    // iterate over previous nodes and their edge weights
                     for prev_n in 0..prevs.len() {
                         let i_p: usize = prevs[prev_n].index() + 1; // index of previous node
+                        let edge = g.find_edge(prevs[prev_n], node).unwrap();
+                        let weight = g.raw_edges()[edge.index()].weight;
+                        println!(
+                            "previous edge {:?}, {:?} between {:?} {:?}",
+                            edge, weight, prev_n, node
+                        );
                         mat_max = max(
                             mat_max,
                             TracebackCell {
                                 score: traceback[i_p][j - 1].score + (self.scoring)(r, *q),
-                                op: Op::Match(Some((i_p - 1, i - 1))),
+                                //                                op: Op::Match(Some((i_p - 1, i - 1))),
+                                op: if weight != 0 {
+                                    Op::Match(Some((i_p - 1, i - 1)))
+                                } else {
+                                    Op::Fs(weight as i8)
+                                },
                             },
                         );
-                        del_max = max(
-                            del_max,
+                        fs_max = max(
+                            fs_max,
                             TracebackCell {
                                 score: traceback[i_p][j].score - 1i32,
-                                op: Op::Del(Some((i_p - 1, i))),
+                                op: Op::Match(Some((i_p - 1, i))),
                             },
                         );
                     }
-                    (mat_max, del_max)
+                    (mat_max, fs_max)
                 };
-                let score = max(
-                    mat,
-                    max(
-                        del,
-                        TracebackCell {
-                            score: traceback[i][j - 1].score - 1i32,
-                            op: Op::Ins(Some(i - 1)),
-                        },
-                    ),
-                );
+                let score = max(mat, fs);
                 traceback[i][j] = score;
             }
         }
 
-        //dump_traceback(&traceback, g, query);
+        dump_traceback(&traceback, g, query);
 
         // Now backtrack through the matrix to construct an optimal path
         let mut i = last.index() + 1;
@@ -226,23 +230,9 @@ impl Aligner {
                     i = p + 1;
                     j = j - 1;
                 }
-                Op::Del(Some((p, _))) => {
-                    i = p + 1;
-                }
-                Op::Ins(Some(p)) => {
-                    i = p + 1;
-                    j = j - 1;
-                }
                 Op::Match(None) => {
                     break;
                 }
-                Op::Del(None) => {
-                    j = j - 1;
-                }
-                Op::Ins(None) => {
-                    i = i - 1;
-                }
-
                 Op::Fs(_) => {}
             }
         }
@@ -342,16 +332,6 @@ impl POAGraph {
                     }
                     i = i + 1;
                 }
-                Op::Ins(None) => {
-                    i = i + 1;
-                }
-                Op::Ins(Some(_)) => {
-                    let node = self.graph.add_node(seq[i]);
-                    self.graph.add_edge(prev, node, 1);
-                    prev = node;
-                    i = i + 1;
-                }
-                Op::Del(_) => {} // we should only have to skip over deleted nodes
                 Op::Fs(_) => {}
             }
         }
@@ -377,19 +357,19 @@ impl POAGraph {
             let fs2 = self.graph.add_node(s2[i]);
 
             if i > 1 {
-                self.graph.add_edge(fs2pp, node, 2);
-                self.graph.add_edge(fs2pp, fs1, 2);
+                self.graph.add_edge(fs2pp, node, -2);
+                self.graph.add_edge(fs2pp, fs1, -2);
             }
 
             if i > 0 {
-                self.graph.add_edge(fs1p, node, 1);
-                self.graph.add_edge(fs1p, fs2, 1);
+                self.graph.add_edge(fs1p, node, -1);
+                self.graph.add_edge(fs1p, fs2, -1);
                 self.graph.add_edge(fs1p, fs1, 0);
                 self.graph.add_edge(fs2p, fs2, 0);
             }
 
-            self.graph.add_edge(prev, fs1, 1);
-            self.graph.add_edge(prev, fs2, 2);
+            self.graph.add_edge(prev, fs1, -1);
+            self.graph.add_edge(prev, fs2, -2);
 
             fs1pp = fs1p;
             fs2pp = fs2p;
@@ -431,10 +411,13 @@ fn dump_traceback(
     let (m, n) = (g.node_count(), query.len());
     print!(".\t");
     for i in 0..n {
-        print!("{:?}\t", query[i]);
+        print!("{:?}\t", String::from_utf8_lossy(&[query[i]]));
     }
     for i in 0..m {
-        print!("\n{:?}\t", g.raw_nodes()[i].weight);
+        print!(
+            "\n{:?}\t",
+            String::from_utf8_lossy(&[g.raw_nodes()[i].weight])
+        );
         for j in 0..n {
             print!("{}.\t", traceback[i + 1][j + 1].score);
         }
@@ -447,94 +430,6 @@ mod tests {
     use alignment::poa::POAGraph;
     use alphabets::translation::table1;
     use petgraph::graph::NodeIndex;
-
-    #[test]
-    fn test_init_graph() {
-        // sanity check for String -> Graph
-        let poa = POAGraph::new("seq1", b"123456789");
-        assert!(poa.graph.is_directed());
-        assert_eq!(poa.graph.node_count(), 9);
-        assert_eq!(poa.graph.edge_count(), 8);
-    }
-
-    #[test]
-    fn test_alignment() {
-        // examples from the POA paper
-        //let _seq1 = b"PKMIVRPQKNETV";
-        //let _seq2 = b"THKMLVRNETIM";
-        let poa = POAGraph::new("seq1", b"GATTACA");
-        let alignment = poa.align_sequence(b"GCATGCU");
-        assert_eq!(alignment.score, 0);
-
-        let alignment = poa.align_sequence(b"GCATGCUx");
-        assert_eq!(alignment.score, -1);
-
-        let alignment = poa.align_sequence(b"xCATGCU");
-        assert_eq!(alignment.score, -2);
-    }
-
-    #[test]
-    fn test_branched_alignment() {
-        let seq1 = b"TTTTT";
-        let seq2 = b"TTATT";
-        let mut poa = POAGraph::new("seq1", seq1);
-        let head: NodeIndex<usize> = NodeIndex::new(1);
-        let tail: NodeIndex<usize> = NodeIndex::new(2);
-        let node1 = poa.graph.add_node(b'A');
-        let node2 = poa.graph.add_node(b'A');
-        poa.graph.add_edge(head, node1, 1);
-        poa.graph.add_edge(node1, node2, 1);
-        poa.graph.add_edge(node2, tail, 1);
-        let alignment = poa.align_sequence(seq2);
-        assert_eq!(alignment.score, 3);
-    }
-
-    #[test]
-    fn test_alt_branched_alignment() {
-        let seq1 = b"TTCCTTAA";
-        let seq2 = b"TTTTGGAA";
-        let mut poa = POAGraph::new("seq1", seq1);
-        let head: NodeIndex<usize> = NodeIndex::new(1);
-        let tail: NodeIndex<usize> = NodeIndex::new(2);
-        let node1 = poa.graph.add_node(b'A');
-        let node2 = poa.graph.add_node(b'A');
-        poa.graph.add_edge(head, node1, 1);
-        poa.graph.add_edge(node1, node2, 1);
-        poa.graph.add_edge(node2, tail, 1);
-        let alignment = poa.align_sequence(seq2);
-        poa.incorporate_alignment(alignment, "seq2", seq2);
-        assert_eq!(poa.graph.edge_count(), 14);
-        assert!(
-            poa.graph
-                .contains_edge(NodeIndex::new(5), NodeIndex::new(10))
-        );
-        assert!(
-            poa.graph
-                .contains_edge(NodeIndex::new(11), NodeIndex::new(6))
-        );
-    }
-
-    #[test]
-    fn test_insertion_on_branch() {
-        let seq1 = b"TTCCGGTTTAA";
-        let seq2 = b"TTGGTATGGGAA";
-        let seq3 = b"TTGGTTTGCGAA";
-        let mut poa = POAGraph::new("seq1", seq1);
-        let head: NodeIndex<usize> = NodeIndex::new(1);
-        let tail: NodeIndex<usize> = NodeIndex::new(2);
-        let node1 = poa.graph.add_node(b'C');
-        let node2 = poa.graph.add_node(b'C');
-        let node3 = poa.graph.add_node(b'C');
-        poa.graph.add_edge(head, node1, 1);
-        poa.graph.add_edge(node1, node2, 1);
-        poa.graph.add_edge(node2, node3, 1);
-        poa.graph.add_edge(node3, tail, 1);
-        let alignment = poa.align_sequence(seq2);
-        assert_eq!(alignment.score, 2);
-        poa.incorporate_alignment(alignment, "seq2", seq2);
-        let alignment2 = poa.align_sequence(seq3);
-        assert_eq!(alignment2.score, 10);
-    }
 
     #[test]
     fn test_braiding() {
@@ -563,7 +458,7 @@ mod tests {
         poa.braid(dna2, dna3);
         poa.write_dot("/tmp/x.dot".to_string());
 
-        let test = b"TCDR";
+        let test = b"^TCDR";
         let alignment = poa.align_sequence(test);
         println!("{:?}", alignment.operations);
         assert!(false);
