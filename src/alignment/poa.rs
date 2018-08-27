@@ -47,7 +47,7 @@ pub enum Op {
     Match(Option<(usize, usize)>),
     //Del(Option<(usize, usize)>),
     //Ins(Option<usize>),
-    Fs(i8),
+    Fs(Option<(usize, usize)>),
 }
 
 pub struct Alignment {
@@ -166,7 +166,7 @@ impl Aligner {
                         },
                         TracebackCell {
                             score: traceback[0][j].score - 1i32,
-                            op: Op::Fs(0),
+                            op: Op::Fs(None),
                         },
                     )
                 } else {
@@ -176,7 +176,7 @@ impl Aligner {
                     };
                     let mut fs_max = TracebackCell {
                         score: MIN_SCORE,
-                        op: Op::Fs(0),
+                        op: Op::Fs(None),
                     };
 
                     // iterate over previous nodes and their edge weights
@@ -188,25 +188,24 @@ impl Aligner {
                             "previous edge {:?}, {:?} between {:?} {:?}",
                             edge, weight, prev_n, node
                         );
-                        mat_max = max(
-                            mat_max,
-                            TracebackCell {
-                                score: traceback[i_p][j - 1].score + (self.scoring)(r, *q),
-                                //                                op: Op::Match(Some((i_p - 1, i - 1))),
-                                op: if weight != 0 {
-                                    Op::Match(Some((i_p - 1, i - 1)))
-                                } else {
-                                    Op::Fs(weight as i8)
+                        if weight == 0 {
+                            mat_max = max(
+                                mat_max,
+                                TracebackCell {
+                                    score: traceback[i_p][j - 1].score + (self.scoring)(r, *q),
+                                    //                                op: Op::Match(Some((i_p - 1, i - 1))),
+                                    op: Op::Match(Some((i_p - 1, i - 1))),
                                 },
-                            },
-                        );
-                        fs_max = max(
-                            fs_max,
-                            TracebackCell {
-                                score: traceback[i_p][j].score - 1i32,
-                                op: Op::Match(Some((i_p - 1, i))),
-                            },
-                        );
+                            );
+                        } else {
+                            fs_max = max(
+                                fs_max,
+                                TracebackCell {
+                                    score: traceback[i_p][j - 1].score + weight,
+                                    op: Op::Fs(Some((i_p - 1, i))),
+                                },
+                            );
+                        }
                     }
                     (mat_max, fs_max)
                 };
@@ -233,7 +232,11 @@ impl Aligner {
                 Op::Match(None) => {
                     break;
                 }
-                Op::Fs(_) => {}
+                Op::Fs(None) => {}
+                Op::Fs(Some((p, _))) => {
+                    i = p + 1;
+                    j = j - 1;
+                }
             }
         }
 
@@ -433,9 +436,9 @@ mod tests {
 
     #[test]
     fn test_braiding() {
-        let dna1 = b"^ABCDE$";
-        let dna2 = b"FGHIJ";
-        let dna3 = b"KLMNO";
+        let dna1 = b"^ABC";
+        let dna2 = b"FGH";
+        let dna3 = b"KLM";
 
         let mut poa = POAGraph::new("seq", dna1);
         poa.braid(dna2, dna3);
@@ -445,11 +448,11 @@ mod tests {
     #[test]
     fn test_frameshift() {
         //        let dna1 = b"ACGTGCGGAATCGCGA";
-        let dna1 = b"^TCGSR$";
+        let dna1 = b"^ABCDE$";
         //        let dna2 = b"CGTGCGGAATCGCGAN";
-        let dna2 = b"RADRX";
+        let dna2 = b"FGHIJ";
         //        let dna3 = b"GTGCGGAATCGCGANN";
-        let dna3 = b"VRIAX";
+        let dna3 = b"KLMNO";
         //        let f1 = table1().translate(dna1);
         //        let f2 = table1().translate(dna2);
         //        let f3 = table1().translate(dna3);
@@ -458,9 +461,10 @@ mod tests {
         poa.braid(dna2, dna3);
         poa.write_dot("/tmp/x.dot".to_string());
 
-        let test = b"^TCDR";
+        let test = b"^AGHIO$";
         let alignment = poa.align_sequence(test);
         println!("{:?}", alignment.operations);
+        println!("final score: {:?}", alignment.score);
         assert!(false);
     }
 
