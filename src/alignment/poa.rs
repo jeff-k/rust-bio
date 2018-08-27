@@ -447,12 +447,10 @@ mod tests {
 
     #[test]
     fn test_frameshift() {
-        //        let dna1 = b"ACGTGCGGAATCGCGA";
-        let dna1 = b"^ABCDE$";
-        //        let dna2 = b"CGTGCGGAATCGCGAN";
-        let dna2 = b"FGHIJ";
-        //        let dna3 = b"GTGCGGAATCGCGANN";
-        let dna3 = b"KLMNO";
+        //        let dna1 = b"ACGTGCGGAATCGCGACGTGGGTAGC";
+        let dna1 = b"^TCGIATWV$";
+        let dna2 = b"RAESRRG*";
+        let dna3 = b"VRNRDVGS";
         //        let f1 = table1().translate(dna1);
         //        let f2 = table1().translate(dna2);
         //        let f3 = table1().translate(dna3);
@@ -461,7 +459,7 @@ mod tests {
         poa.braid(dna2, dna3);
         poa.write_dot("/tmp/x.dot".to_string());
 
-        let test = b"^AGHIO$";
+        let test = b"^TCGIGRG*$";
         let alignment = poa.align_sequence(test);
         println!("{:?}", alignment.operations);
         println!("final score: {:?}", alignment.score);
