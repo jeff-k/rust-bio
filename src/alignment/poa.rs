@@ -184,10 +184,6 @@ impl Aligner {
                         let i_p: usize = prevs[prev_n].index() + 1; // index of previous node
                         let edge = g.find_edge(prevs[prev_n], node).unwrap();
                         let weight = g.raw_edges()[edge.index()].weight;
-                        println!(
-                            "previous edge {:?}, {:?} between {:?} {:?}",
-                            edge, weight, prev_n, node
-                        );
                         if weight == 0 {
                             mat_max = max(
                                 mat_max,
@@ -214,7 +210,7 @@ impl Aligner {
             }
         }
 
-        dump_traceback(&traceback, g, query);
+        //        dump_traceback(&traceback, g, query);
 
         // Now backtrack through the matrix to construct an optimal path
         let mut i = last.index() + 1;
@@ -442,7 +438,7 @@ mod tests {
 
         let mut poa = POAGraph::new("seq", dna1);
         poa.braid(dna2, dna3);
-        poa.write_dot("/tmp/y.dot".to_string());
+        //        poa.write_dot("/tmp/y.dot".to_string());
     }
 
     #[test]
@@ -457,13 +453,13 @@ mod tests {
 
         let mut poa = POAGraph::new("seq", dna1);
         poa.braid(dna2, dna3);
-        poa.write_dot("/tmp/x.dot".to_string());
+        //        poa.write_dot("/tmp/x.dot".to_string());
 
         let test = b"^TCGIGRG*$";
         let alignment = poa.align_sequence(test);
-        println!("{:?}", alignment.operations);
-        println!("final score: {:?}", alignment.score);
-        assert!(false);
+        //        println!("{:?}", alignment.operations);
+        //        println!("final score: {:?}", alignment.score);
+        //        assert!(false);
     }
 
 }
