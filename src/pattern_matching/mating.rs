@@ -18,9 +18,9 @@
 //!
 //! Mate pair merging procedes in two steps:
 //!   mate: identifying the optimal overlap length or rejecting the case
-//!   merge: combines overlapping sequences 
+//!   merge: combines overlapping sequences
 //!
-//! Mating is governed by an objective function and merging resolves 
+//! Mating is governed by an objective function and merging resolves
 //! conflicts between sequences ("mending").
 //!
 //! We also need to define the scores for which mating is acceptible. The
@@ -36,26 +36,31 @@ pub fn mate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: i16) -> Optio
     let mut m: i16 = 0;
     let mut overlap: usize = 0;
     for i in min_overlap..max_overlap {
-        let h = score(&r2[0..i], &r1[r1.len()-i..r1.len()]);
+        let h = score(&r2[0..i], &r1[r1.len() - i..r1.len()]);
         if h > m {
             m = h;
             overlap = i;
         }
     }
     if m >= min_score {
-        return Some(overlap)
+        return Some(overlap);
     }
     None
 }
 
 // mating function using the Hamming rate
-pub fn mate_hamming_rate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: i16) -> Option<usize> {
+pub fn mate_hamming_rate(
+    r1: &[u8],
+    r2: &[u8],
+    overlap_bound: usize,
+    min_score: i16,
+) -> Option<usize> {
     let max_overlap = cmp::min(r1.len(), r2.len());
     let min_overlap = overlap_bound - 1;
     let mut m: i16 = 0;
     let mut overlap: usize = 0;
     for i in min_overlap..max_overlap {
-//        let h = hamming(&r2[0..i], &r1[r1.len()-i..r1.len()]) / i;
+        //        let h = hamming(&r2[0..i], &r1[r1.len()-i..r1.len()]) / i;
         let h = 0;
         if h > m {
             m = h;
@@ -63,7 +68,7 @@ pub fn mate_hamming_rate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: 
         }
     }
     if m >= min_score {
-        return Some(overlap)
+        return Some(overlap);
     }
     None
 }
@@ -91,13 +96,13 @@ fn mend_consensus(a: u8, b: u8) -> u8 {
 }
 
 pub fn merge(r1: &[u8], r2: &[u8], overlap: usize) -> Vec<u8> {
-    let r1_end = r1.len() - overlap; 
+    let r1_end = r1.len() - overlap;
     let r2_end = r2.len() - overlap;
     let len = r1_end + overlap + r2_end;
 
     let mut seq = vec![0; len];
     seq[0..r1_end].copy_from_slice(&r1[0..r1_end]);
-    
+
     // decide what to do for the overlapping part
     for i in 0..overlap {
         seq[r1_end + i] = mend_consensus(r1[r1_end + i], r2[i]);
@@ -123,7 +128,7 @@ mod tests {
     #[test]
     fn test_mate_pair() {
         let r1 = b"tacgattcgat";
-        let r2 =      b"ttcgattacgt";
+        let r2 = b"ttcgattacgt";
         let offset = mate(r1, r2, 3, 3).unwrap();
         assert_eq!(offset, 6);
     }
@@ -131,38 +136,38 @@ mod tests {
     #[test]
     fn test_merge_pair() {
         let r1 = b"tacgattcgat";
-        let r2 =      b"ttcgattacgt";
+        let r2 = b"ttcgattacgt";
         assert_eq!(merge(r1, r2, 6), b"tacgattcgattacgt");
     }
 
     #[test]
     fn test_merge_consensus() {
         let r1 = b"actgtagtacaccatgatg";
-        let r2 =       b"gtttaccatgatggattga";
+        let r2 = b"gtttaccatgatggattga";
         let offset = mate(r1, r2, 3, 3).unwrap();
-        assert_eq!(offset, 13);  
+        assert_eq!(offset, 13);
         assert_eq!(merge(r1, r2, offset), b"actgtagtNNaccatgatggattga");
     }
 
     #[test]
     fn test_overlap_bounds() {
         let r1 = b"ctagtcagctagcatgcatgctcgcgtatacgctagc";
-        let r2 =                          b"gtatacgctagccgctagcatgcat";
-        assert_eq!(mate(r1, r2, 12, 12).unwrap(), 12); 
+        let r2 = b"gtatacgctagccgctagcatgcat";
+        assert_eq!(mate(r1, r2, 12, 12).unwrap(), 12);
         assert_eq!(mate(r1, r2, 13, 13), None);
     }
 
     #[test]
     fn test_score_bounds() {
         let r1 = b"there is no restriction to DNA strings";
-        let r2 =                   b"ctiin ot dNA atrings asdf qwer";
-        assert_eq!(mate(r1, r2, 12, 10).unwrap(), 20); 
+        let r2 = b"ctiin ot dNA atrings asdf qwer";
+        assert_eq!(mate(r1, r2, 12, 10).unwrap(), 20);
         assert_eq!(mate(r1, r2, 12, 11), None);
-    } 
+    }
 
     #[test]
     fn test_truncation() {
-        let r1 =       b"cgctgtcatgc";
+        let r1 = b"cgctgtcatgc";
         let r2 = b"tcatgccgctgt";
         assert_eq!(truncate(r1, r2, 6), b"cgctgt");
     }

@@ -365,7 +365,9 @@ fn swap_interval_data<N: Ord + Clone, D>(node_1: &mut Node<N, D>, node_2: &mut N
 }
 
 fn intersect<N: Ord + Clone>(range_1: &Interval<N>, range_2: &Interval<N>) -> bool {
-    range_1.start < range_1.end && range_2.start < range_2.end && range_1.end > range_2.start
+    range_1.start < range_1.end
+        && range_2.start < range_2.end
+        && range_1.end > range_2.start
         && range_1.start < range_2.end
 }
 
