@@ -424,6 +424,11 @@ fn dump_traceback(
     print!("\n");
 }
 
+//pub fn frameshift(dna: TextSlice) -> Vec<Op> {
+//   for fs1 in dna.chunks(2) {
+//   }
+//}
+
 #[cfg(test)]
 mod tests {
     use alignment::poa::POAGraph;
@@ -443,23 +448,33 @@ mod tests {
 
     #[test]
     fn test_frameshift() {
-        //        let dna1 = b"ACGTGCGGAATCGCGACGTGGGTAGC";
+        let dna = b"CGTGCGGAATCGCGACGTGGGTAGCCN";
+        dna.chunks(3).map(|codon| println!("aa: {:?}", codon));
+
+        let mut fs1: Vec<u8> = vec![0; (dna.len() / 3)];
+        let mut i: usize = 0;
+        for codon in dna.chunks(3) {
+            fs1[i] = *table1().translate(codon);
+            i += 1;
+            //            println!("codon {:?}", String::from_utf8_lossy(&[table1().translate(codon)]));
+        }
+        println!("translated {:?}", String::from_utf8_lossy(&fs1));
         let dna1 = b"^TCGIATWV$";
-        let dna2 = b"RAESRRG*";
+        //let dna2 = b"RAESRRG*";
         let dna3 = b"VRNRDVGS";
         //        let f1 = table1().translate(dna1);
         //        let f2 = table1().translate(dna2);
         //        let f3 = table1().translate(dna3);
 
         let mut poa = POAGraph::new("seq", dna1);
-        poa.braid(dna2, dna3);
+        poa.braid(&fs1, dna3);
         //        poa.write_dot("/tmp/x.dot".to_string());
 
-        let test = b"^TCGIGRG*$";
+        let test = b"^TCGIDVGS$";
         let alignment = poa.align_sequence(test);
-        //        println!("{:?}", alignment.operations);
-        //        println!("final score: {:?}", alignment.score);
-        //        assert!(false);
+        println!("{:?}", alignment.operations);
+        println!("final score: {:?}", alignment.score);
+        assert!(false);
     }
 
 }
