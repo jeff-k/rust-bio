@@ -1,18 +1,4 @@
-// Copyright 2017 Brett Bowman
-// Licensed under the MIT license (http://opensource.org/licenses/MIT)
-// This file may not be copied, modified, or distributed
-// except according to those terms.
-
-//! Partial-Order Alignment for fast alignment and consensus of long homologous sequences.
-//!
-//! For the original concept and theory, see:
-//! * Lee, Christopher, Catherine Grasso, and Mark F. Sharlow. "Multiple sequence alignment using
-//! partial order graphs." Bioinformatics 18.3 (2002): 452-464.
-//! * Lee, Christopher. "Generating consensus sequences from partial order multiple sequence
-//! alignment graphs." Bioinformatics 19.8 (2003): 999-1008.
-//!
-//! For a reference implementation that inspired this code, see poapy:
-//! https://github.com/ljdursi/poapy
+//! Partial-Order Alignment for detecting false positive frameshift mutations
 
 use std::cmp::{max, Ordering};
 use std::error::Error;
@@ -21,7 +7,7 @@ use std::io::Write;
 use std::str;
 use std::string::String;
 
-use alphabets::translation::table1;
+use alphabets::translation::{nuc2amino, table1};
 use utils::TextSlice;
 
 use petgraph::dot::Dot;
@@ -48,6 +34,7 @@ pub enum Op {
     //Del(Option<(usize, usize)>),
     //Ins(Option<usize>),
     Fs(Option<(usize, usize)>),
+    Indel(Option<(usize, usize)>),
 }
 
 pub struct Alignment {
@@ -166,7 +153,8 @@ impl Aligner {
                         },
                         TracebackCell {
                             score: traceback[0][j].score - 1i32,
-                            op: Op::Fs(None),
+                            //        op: Op::Fs(None),
+                            op: Op::Indel(None),
                         },
                     )
                 } else {
@@ -178,7 +166,10 @@ impl Aligner {
                         score: MIN_SCORE,
                         op: Op::Fs(None),
                     };
-
+                    let mut indel_max = TracebackCell {
+                        score: MIN_SCORE,
+                        op: Op::Indel(None),
+                    };
                     // iterate over previous nodes and their edge weights
                     for prev_n in 0..prevs.len() {
                         let i_p: usize = prevs[prev_n].index() + 1; // index of previous node
@@ -189,7 +180,7 @@ impl Aligner {
                                 mat_max,
                                 TracebackCell {
                                     score: traceback[i_p][j - 1].score + (self.scoring)(r, *q),
-                                    //                                op: Op::Match(Some((i_p - 1, i - 1))),
+                                    //  op: Op::Match(Some((i_p - 1, i - 1))),
                                     op: Op::Match(Some((i_p - 1, i - 1))),
                                 },
                             );
@@ -202,10 +193,27 @@ impl Aligner {
                                 },
                             );
                         }
+                        // deletions?
+                        //                        indel_max = max (
+                        //                            indel_max,
+                        //                            TracebackCell {
+                        //                                score: traceback[i_p][j].score - 0i32,
+                        //                                op: Op::Indel(Some((i_p - 1, i))),
+                        //                            },
+                        //                        );
                     }
                     (mat_max, fs_max)
                 };
-                let score = max(mat, fs);
+                let score = max(
+                    mat,
+                    max(
+                        fs,
+                        TracebackCell {
+                            score: traceback[i][j - 1].score - 0i32,
+                            op: Op::Indel(Some((j, i - 1))),
+                        },
+                    ),
+                );
                 traceback[i][j] = score;
             }
         }
@@ -232,6 +240,13 @@ impl Aligner {
                 Op::Fs(Some((p, _))) => {
                     i = p + 1;
                     j = j - 1;
+                }
+                Op::Indel(Some((_, p))) => {
+                    i = p + 1;
+                    j = j - 1;
+                }
+                Op::Indel(None) => {
+                    i = i - 1;
                 }
             }
         }
@@ -332,6 +347,7 @@ impl POAGraph {
                     i = i + 1;
                 }
                 Op::Fs(_) => {}
+                Op::Indel(_) => {}
             }
         }
     }
@@ -400,6 +416,16 @@ impl POAGraph {
     }
 }
 
+pub fn braid_fs(dna: TextSlice) -> POAGraph {
+    let s = vec![b'^', b'$'];
+    println!("entering braid");
+    let d = [&s[0..1], &nuc2amino(dna), &s[1..2]].concat();
+    println!("braiding {:?}", d);
+    let mut poa = POAGraph::new("s", &d);
+    poa.braid(&nuc2amino(&dna[1..]), &nuc2amino(&dna[2..]));
+    poa
+}
+
 // print out a traceback matrix
 #[allow(dead_code)]
 fn dump_traceback(
@@ -431,8 +457,8 @@ fn dump_traceback(
 
 #[cfg(test)]
 mod tests {
-    use alignment::poa::POAGraph;
-    use alphabets::translation::table1;
+    use alignment::poa::{braid_fs, POAGraph};
+    use alphabets::translation::{nuc2amino, table1};
     use petgraph::graph::NodeIndex;
 
     #[test]
@@ -448,30 +474,15 @@ mod tests {
 
     #[test]
     fn test_frameshift() {
-        let dna = b"CGTGCGGAATCGCGACGTGGGTAGCCN";
-        dna.chunks(3).map(|codon| println!("aa: {:?}", codon));
-
-        let mut fs1: Vec<u8> = vec![0; (dna.len() / 3)];
-        let mut i: usize = 0;
-        for codon in dna.chunks(3) {
-            fs1[i] = *table1().translate(codon);
-            i += 1;
-            //            println!("codon {:?}", String::from_utf8_lossy(&[table1().translate(codon)]));
-        }
-        println!("translated {:?}", String::from_utf8_lossy(&fs1));
-        let dna1 = b"^TCGIATWV$";
-        //let dna2 = b"RAESRRG*";
-        let dna3 = b"VRNRDVGS";
-        //        let f1 = table1().translate(dna1);
-        //        let f2 = table1().translate(dna2);
-        //        let f3 = table1().translate(dna3);
-
-        let mut poa = POAGraph::new("seq", dna1);
-        poa.braid(&fs1, dna3);
-        //        poa.write_dot("/tmp/x.dot".to_string());
-
-        let test = b"^TCGIDVGS$";
-        let alignment = poa.align_sequence(test);
+        let dna = b"GTGCGGAATCGCGACGTGGGTAGCCGGGG";
+        println!("translated {:?}", String::from_utf8_lossy(&nuc2amino(dna)));
+        let poa = braid_fs(dna);
+        poa.write_dot("/tmp/x.dot".to_string());
+        let test = &nuc2amino(b"GTACGTAACAGGCTATGTGGGTAGCCCGGT");
+        let s = vec![b'^', b'$'];
+        let x = &[&s[0..1], test, &s[1..2]].concat();
+        println!("testing {:?}", String::from_utf8_lossy(x));
+        let alignment = poa.align_sequence(x);
         println!("{:?}", alignment.operations);
         println!("final score: {:?}", alignment.score);
         assert!(false);

@@ -41,6 +41,19 @@ impl Translation_Table {
     }
 }
 
+pub fn nuc2amino(dna: TextSlice) -> Vec<u8> {
+    // pad sequence with Ns
+    let mut fs: Vec<u8> = vec![b'X'; (dna.len() / 3) + 1];
+    for (i, codon) in dna.chunks(3).enumerate() {
+        if codon.len() != 3 {
+            fs[i] = b'X';
+        } else {
+            fs[i] = *table1().translate(codon);
+        }
+    }
+    fs
+}
+
 pub fn table1() -> Translation_Table {
     Translation_Table::new(
         b"FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
