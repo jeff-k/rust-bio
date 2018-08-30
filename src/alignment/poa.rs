@@ -317,39 +317,25 @@ impl POAGraph {
     /// * `label` - The name of the new sequence being added to the graph
     /// * `seq` - The complete sequence of the read being incorporated
     ///
-    pub fn incorporate_alignment(&mut self, aln: Alignment, _label: &str, seq: TextSlice) {
+    pub fn reconstruct(&self, aln: Alignment, _label: &str, seq: TextSlice) -> Vec<u8> {
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
         let mut i: usize = 0;
-        for op in aln.operations {
+        let mut out = Vec::new();
+
+        for (codon, op) in seq.chunks(3).zip(aln.operations[1..].iter()) {
+            println!("{:?} - {:?}", String::from_utf8_lossy(codon), op);
             match op {
                 Op::Match(None) => {
                     i = i + 1;
                 }
-                Op::Match(Some((_, p))) => {
-                    let node = NodeIndex::new(p);
-                    if seq[i] != self.graph.raw_nodes()[p].weight {
-                        let node = self.graph.add_node(seq[i]);
-                        self.graph.add_edge(prev, node, 1);
-                        prev = node;
-                    } else {
-                        // increment node weight
-                        match self.graph.find_edge(prev, node) {
-                            Some(edge) => {
-                                *self.graph.edge_weight_mut(edge).unwrap() += 1;
-                            }
-                            None => {
-                                // where the previous node was newly added
-                                self.graph.add_edge(prev, node, 1);
-                            }
-                        }
-                        prev = NodeIndex::new(p);
-                    }
-                    i = i + 1;
+                Op::Match(Some((_, _))) => {
+                    out.push(codon);
                 }
-                Op::Fs(_) => {}
+                Op::Fs(_) => out.push(b"nnn"),
                 Op::Indel(_) => {}
             }
         }
+        out.concat()
     }
 
     pub fn braid(&mut self, s1: TextSlice, s2: TextSlice) {
@@ -478,13 +464,14 @@ mod tests {
         println!("translated {:?}", String::from_utf8_lossy(&nuc2amino(dna)));
         let poa = braid_fs(dna);
         poa.write_dot("/tmp/x.dot".to_string());
-        let test = &nuc2amino(b"GTACGTAACAGGCTATGTGGGTAGCCCGGT");
+        let orig = b"GTGCGAATCGCGATGTGGGTAGCCGGGG";
+        let test = &nuc2amino(orig);
         let s = vec![b'^', b'$'];
         let x = &[&s[0..1], test, &s[1..2]].concat();
-        println!("testing {:?}", String::from_utf8_lossy(x));
+        println!("frameshifting {:?}", String::from_utf8_lossy(x));
         let alignment = poa.align_sequence(x);
-        println!("{:?}", alignment.operations);
-        println!("final score: {:?}", alignment.score);
+        let r = poa.reconstruct(alignment, "asdf", orig);
+        println!("fs aligned {:?}", String::from_utf8_lossy(&r));
         assert!(false);
     }
 
