@@ -41,14 +41,14 @@ impl Translation_Table {
     }
 }
 
-pub fn nuc2amino(dna: TextSlice) -> Vec<u8> {
+pub fn nuc2amino(dna: TextSlice, table: &Translation_Table) -> Vec<u8> {
     // pad sequence with Ns
     let mut fs: Vec<u8> = vec![b'X'; (dna.len() / 3) + 1];
     for (i, codon) in dna.chunks(3).enumerate() {
         if codon.len() != 3 {
             fs[i] = b'X';
         } else {
-            fs[i] = *table1().translate(codon);
+            fs[i] = *table.translate(codon);
         }
     }
     fs
@@ -62,6 +62,16 @@ pub fn table1() -> Translation_Table {
         b"TTTTCCCCAAAAGGGGTTTTCCCCAAAAGGGGTTTTCCCCAAAAGGGGTTTTCCCCAAAAGGGG",
         b"TCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAGTCAG",
     )
+}
+
+pub fn test_table() -> Translation_Table {
+    Translation_Table::new(
+        b"ABCABCDEFGHIJKLMNOPQ",
+        b"---------",
+        b"abcabcdefghijklmnopq",
+        b"abcbcdefghijklmnopqr",
+        b"abccdefghijklmnopqrs",
+        )
 }
 
 // constructor for the standard genetic code from condensed translation table
