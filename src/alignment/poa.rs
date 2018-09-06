@@ -86,7 +86,7 @@ impl Eq for TracebackCell {}
 
 impl Aligner {
     pub fn new() -> Self {
-        let score_fn = |a: u8, b: u8| if a == b { 1i32 } else { -1i32 };
+        let score_fn = |a: u8, b: u8| if a == b { 3i32 } else { -4i32 };
         Aligner { scoring: score_fn }
     }
 
@@ -113,13 +113,15 @@ impl Aligner {
         for i in 1..(m + 1) {
             // TODO: these should be -1 * distance from head node
             traceback[i][0] = TracebackCell {
-                score: -1 * i as i32,
+                //                score: -1 * i as i32,
+                score: 0i32,
                 op: Op::Del(None),
             };
         }
         for j in 1..(n + 1) {
             traceback[0][j] = TracebackCell {
-                score: -1 * j as i32,
+                //                score: -1 * j as i32,
+                score: 0i32,
                 op: Op::Ins(None),
             };
         }
@@ -153,7 +155,7 @@ impl Aligner {
                             op: Op::Match(None),
                         },
                         TracebackCell {
-                            score: traceback[0][j].score - 1i32,
+                            score: traceback[0][j].score - 0i32,
                             op: Op::Del(None),
                         },
                         TracebackCell {
@@ -321,18 +323,32 @@ impl POAGraph {
         let mut i: usize = 0;
         let mut out = Vec::new();
 
-        for (codon, op) in seq.chunks(3).zip(aln.operations[1..].iter()) {
+        for op in aln.operations.iter() {
+            if i + 3 >= seq.len() {
+                break;
+            }
+            let codon = &seq[i..i + 3];
             println!("{:?} - {:?}", String::from_utf8_lossy(codon), op);
             match op {
                 Op::Match(None) => {
-                    i = i + 1;
+                    i = i + 3;
                 }
                 Op::Match(Some((_, _))) => {
                     out.push(codon);
+                    i = i + 3;
                 }
-                Op::Fs(_) => out.push(b"nnn"),
-                Op::Del(_) => {}
-                Op::Ins(_) => {}
+                Op::Fs(_) => {
+                    out.push(b"nnn");
+                    i = i + 1;
+                }
+                Op::Del(_) => {
+                    i = i + 3;
+                    out.push(codon)
+                }
+                Op::Ins(_) => {
+                    i = i + 3;
+                    out.push(codon)
+                }
             }
         }
         out.concat()
@@ -358,20 +374,20 @@ impl POAGraph {
             let fs2 = self.graph.add_node(s2[i]);
 
             if i > 1 {
-                self.graph.add_edge(fs1pp, node, -2);
-                self.graph.add_edge(fs2pp, node, -1);
-                self.graph.add_edge(fs2pp, fs1, -2);
+                self.graph.add_edge(fs1pp, node, -4);
+                self.graph.add_edge(fs2pp, node, -2);
+                self.graph.add_edge(fs2pp, fs1, -4);
             }
 
             if i > 0 {
                 //self.graph.add_edge(fs1p, node, -2);
-                self.graph.add_edge(fs1p, fs2, -1);
+                self.graph.add_edge(fs1p, fs2, -2);
                 self.graph.add_edge(fs1p, fs1, 0);
                 self.graph.add_edge(fs2p, fs2, 0);
             }
 
-            self.graph.add_edge(prev, fs1, -1);
-            self.graph.add_edge(prev, fs2, -2);
+            self.graph.add_edge(prev, fs1, -2);
+            self.graph.add_edge(prev, fs2, -4);
 
             fs1pp = fs1p;
             fs2pp = fs2p;
@@ -468,7 +484,11 @@ mod tests {
             String::from_utf8_lossy(&nuc2amino(seq, &test_table()))
         );
         let poa = braid_fs(seq, &test_table());
-        let tst = b"abcdefghijklmnopqr";
+        let tst = b"abcdefghiijklmnopqr";
+        println!(
+            "correcting {:?}",
+            String::from_utf8_lossy(&nuc2amino(tst, &test_table()))
+        );
         let alignment = poa.align_sequence(&nuc2amino(tst, &test_table()));
         poa.write_dot("/tmp/test_braid.dot".to_string());
         println!("score {:?}", alignment.score);
