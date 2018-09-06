@@ -71,7 +71,7 @@ pub fn test_table() -> Translation_Table {
         b"abcabcdefghijklmnopq",
         b"abcbcdefghijklmnopqr",
         b"abccdefghijklmnopqrs",
-        )
+    )
 }
 
 // constructor for the standard genetic code from condensed translation table

@@ -22,11 +22,11 @@ use std::str;
 
 use utils::TextSlice;
 
+use alphabets::translation::{nuc2amino, table1, Translation_Table};
 use petgraph::dot::Dot;
 use petgraph::graph::NodeIndex;
 use petgraph::visit::Topo;
 use petgraph::{Directed, Graph, Incoming};
-use alphabets::translation::{nuc2amino, table1, Translation_Table};
 
 pub const MIN_SCORE: i32 = -858_993_459; // negative infinity; see alignment/pairwise/mod.rs
 
@@ -179,30 +179,29 @@ impl Aligner {
                         let edge = g.find_edge(prevs[prev_n], node).unwrap();
                         let weight = g.raw_edges()[edge.index()].weight;
                         if weight == 0 {
-                        mat_max = max(
-                            mat_max,
-                            TracebackCell {
-                                score: traceback[i_p][j - 1].score + (self.scoring)(r, *q),
-                                op: Op::Match(Some((i_p - 1, i - 1))),
-                            },
-                        );
-                        del_max = max(
-                            del_max,
-                            TracebackCell {
-                                score: traceback[i_p][j].score - 1i32,
-                                op: Op::Del(Some((i_p - 1, i))),
-                            },
-                        );
+                            mat_max = max(
+                                mat_max,
+                                TracebackCell {
+                                    score: traceback[i_p][j - 1].score + (self.scoring)(r, *q),
+                                    op: Op::Match(Some((i_p - 1, i - 1))),
+                                },
+                            );
+                            del_max = max(
+                                del_max,
+                                TracebackCell {
+                                    score: traceback[i_p][j].score - 1i32,
+                                    op: Op::Del(Some((i_p - 1, i))),
+                                },
+                            );
                         } else {
                             fs_max = max(
                                 fs_max,
                                 TracebackCell {
-                                    score: traceback[i_p][j-1].score + weight,
+                                    score: traceback[i_p][j - 1].score + weight,
                                     op: Op::Fs(Some((i_p - 1, i))),
                                 },
-                                );
+                            );
                         }
-
                     }
                     (mat_max, del_max, fs_max)
                 };
@@ -220,7 +219,7 @@ impl Aligner {
             }
         }
 
-        //dump_traceback(&traceback, g, query);
+        dump_traceback(&traceback, g, query);
 
         // Now backtrack through the matrix to construct an optimal path
         let mut i = last.index() + 1;
@@ -299,7 +298,7 @@ impl POAGraph {
         let mut node: NodeIndex<usize>;
         for i in 1..sequence.len() {
             node = graph.add_node(sequence[i]);
-            graph.add_edge(prev, node, 1);
+            graph.add_edge(prev, node, 0);
             prev = node;
         }
         graph
@@ -315,50 +314,6 @@ impl POAGraph {
     pub fn align_sequence(&self, seq: &[u8]) -> Alignment {
         let mut aligner = Aligner::new();
         aligner.global(&self.graph, seq)
-    }
-
-    pub fn incorporate_alignment(&mut self, aln: Alignment, _label: &str, seq: TextSlice) {
-        let mut prev: NodeIndex<usize> = NodeIndex::new(0);
-        let mut i: usize = 0;
-        for op in aln.operations {
-            match op {
-                Op::Match(None) => {
-                    i = i + 1;
-                }
-                Op::Match(Some((_, p))) => {
-                    let node = NodeIndex::new(p);
-                    if seq[i] != self.graph.raw_nodes()[p].weight {
-                        let node = self.graph.add_node(seq[i]);
-                        self.graph.add_edge(prev, node, 1);
-                        prev = node;
-                    } else {
-                        // increment node weight
-                        match self.graph.find_edge(prev, node) {
-                            Some(edge) => {
-                                *self.graph.edge_weight_mut(edge).unwrap() += 1;
-                            }
-                            None => {
-                                // where the previous node was newly added
-                                self.graph.add_edge(prev, node, 1);
-                            }
-                        }
-                        prev = NodeIndex::new(p);
-                    }
-                    i = i + 1;
-                }
-                Op::Ins(None) => {
-                    i = i + 1;
-                }
-                Op::Ins(Some(_)) => {
-                    let node = self.graph.add_node(seq[i]);
-                    self.graph.add_edge(prev, node, 1);
-                    prev = node;
-                    i = i + 1;
-                }
-                Op::Del(_) => {} // we should only have to skip over deleted nodes
-                Op::Fs(_) => {} // TODO: figure out
-            }
-        }
     }
 
     pub fn reconstruct(&self, aln: Alignment, _label: &str, seq: TextSlice) -> Vec<u8> {
@@ -428,7 +383,7 @@ impl POAGraph {
         self.graph.add_edge(fs1p, last, 0);
         self.graph.add_edge(fs2p, last, 0);
     }
- 
+
     /// Write the current graph to a specified filepath in dot format for
     /// visualization, primarily for debugging / diagnostics
     ///
@@ -507,15 +462,22 @@ mod tests {
 
     #[test]
     fn construct_frames() {
-        let seq = b"abcdefghijklmnopq";
-        println!("translated {:?}", String::from_utf8_lossy(&nuc2amino(seq, &test_table())));
+        let seq = b"abcdefghijklmnopqrxx";
+        println!(
+            "translated {:?}",
+            String::from_utf8_lossy(&nuc2amino(seq, &test_table()))
+        );
         let poa = braid_fs(seq, &test_table());
-        let tst = b"abcdefghijklmnopq";
-        let alignment = poa.align_sequence(tst);
+        let tst = b"abcdefghijklmnopqr";
+        let alignment = poa.align_sequence(&nuc2amino(tst, &test_table()));
         poa.write_dot("/tmp/test_braid.dot".to_string());
+        println!("score {:?}", alignment.score);
         let r = poa.reconstruct(alignment, "asdf", tst);
         println!("{:?}", String::from_utf8_lossy(&r));
-        println!("{:?}", String::from_utf8_lossy(&nuc2amino(&r, &test_table()))); 
+        println!(
+            "{:?}",
+            String::from_utf8_lossy(&nuc2amino(&r, &test_table()))
+        );
         assert!(false);
     }
 
