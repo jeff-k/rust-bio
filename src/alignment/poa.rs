@@ -46,7 +46,7 @@ pub enum Op {
     Match(Option<(usize, usize)>),
     Del(Option<(usize, usize)>),
     Ins(Option<usize>),
-    Fs(Option<(usize, usize)>),
+    Fs(Option<(usize, i32)>),
 }
 
 pub struct Alignment {
@@ -86,7 +86,13 @@ impl Eq for TracebackCell {}
 
 impl Aligner {
     pub fn new() -> Self {
-        let score_fn = |a: u8, b: u8| if a == b { 3i32 } else { -4i32 };
+        let score_fn = |a: u8, b: u8| {
+            if a == b {
+                4i32
+            } else {
+                0i32
+            }
+        };
         Aligner { scoring: score_fn }
     }
 
@@ -191,7 +197,7 @@ impl Aligner {
                             del_max = max(
                                 del_max,
                                 TracebackCell {
-                                    score: traceback[i_p][j].score - 1i32,
+                                    score: traceback[i_p][j].score - 10i32,
                                     op: Op::Del(Some((i_p - 1, i))),
                                 },
                             );
@@ -199,8 +205,8 @@ impl Aligner {
                             fs_max = max(
                                 fs_max,
                                 TracebackCell {
-                                    score: traceback[i_p][j - 1].score + weight,
-                                    op: Op::Fs(Some((i_p - 1, i))),
+                                    score: traceback[i_p][j - 1].score + 0,
+                                    op: Op::Fs(Some((i_p - 1, weight))),
                                 },
                             );
                         }
@@ -212,7 +218,7 @@ impl Aligner {
                     max(
                         del,
                         TracebackCell {
-                            score: traceback[i][j - 1].score - 1i32,
+                            score: traceback[i][j - 1].score - 10i32,
                             op: Op::Ins(Some(i - 1)),
                         },
                     ),
@@ -253,7 +259,7 @@ impl Aligner {
                     i = i - 1;
                 }
                 Op::Fs(None) => {}
-                Op::Fs(Some((p, _))) => {
+                Op::Fs(Some((p, weight))) => {
                     i = p + 1;
                     j = j - 1;
                 }
@@ -323,33 +329,45 @@ impl POAGraph {
         let mut i: usize = 0;
         let mut out = Vec::new();
 
-        for op in aln.operations.iter() {
-            if i + 3 >= seq.len() {
+        for op in aln.operations[1..].iter() {
+            if i + 3 > seq.len() {
                 break;
             }
-            let codon = &seq[i..i + 3];
-            println!("{:?} - {:?}", String::from_utf8_lossy(codon), op);
+            let mut codon = &seq[i..i + 3];
             match op {
                 Op::Match(None) => {
+                    codon = &seq[i..i + 3];
                     i = i + 3;
                 }
                 Op::Match(Some((_, _))) => {
-                    out.push(codon);
+                    codon = &seq[i..i + 3];
                     i = i + 3;
                 }
-                Op::Fs(_) => {
-                    out.push(b"nnn");
+                Op::Fs(None) => {}
+                Op::Fs(Some((_, -2))) => {
+                    //                    out.push(b"nnn");
+                    i = i + 2;
+                    codon = b"nnn";
+                }
+                Op::Fs(Some((_, -3))) => {
+                    //                    out.push(b"nnn");
                     i = i + 1;
+                    codon = b"nnn";
+                }
+                Op::Fs(Some((_, _))) => {
+                    println!("YUO FORGOT");
                 }
                 Op::Del(_) => {
-                    i = i + 3;
-                    out.push(codon)
+                    //                    i = i + 3;
                 }
                 Op::Ins(_) => {
                     i = i + 3;
-                    out.push(codon)
+                    codon = &seq[i..i + 3];
                 }
             }
+            //           let codon = &seq[(i-3)..i];
+            println!("{:?} - {:?}", String::from_utf8_lossy(&codon), op);
+            out.push(codon);
         }
         out.concat()
     }
@@ -374,9 +392,9 @@ impl POAGraph {
             let fs2 = self.graph.add_node(s2[i]);
 
             if i > 1 {
-                self.graph.add_edge(fs1pp, node, -4);
+                self.graph.add_edge(fs1pp, node, -3);
                 self.graph.add_edge(fs2pp, node, -2);
-                self.graph.add_edge(fs2pp, fs1, -4);
+                self.graph.add_edge(fs2pp, fs1, -3);
             }
 
             if i > 0 {
@@ -387,7 +405,7 @@ impl POAGraph {
             }
 
             self.graph.add_edge(prev, fs1, -2);
-            self.graph.add_edge(prev, fs2, -4);
+            self.graph.add_edge(prev, fs2, -3);
 
             fs1pp = fs1p;
             fs2pp = fs2p;
@@ -424,7 +442,7 @@ pub fn braid_fs(dna: TextSlice, table: &Translation_Table) -> POAGraph {
     let s = vec![b'^', b'$'];
     println!("entering braid");
     let d = [&s[0..1], &nuc2amino(dna, table), &s[1..2]].concat();
-    println!("braiding {:?}", d);
+    println!("braiding {:?}", String::from_utf8_lossy(&d));
     let mut poa = POAGraph::new("s", &d);
     poa.braid(&nuc2amino(&dna[1..], table), &nuc2amino(&dna[2..], table));
     poa
@@ -498,7 +516,24 @@ mod tests {
             "{:?}",
             String::from_utf8_lossy(&nuc2amino(&r, &test_table()))
         );
-        assert!(false);
+        assert!(true);
     }
 
+    #[test]
+    fn test_simple_fs() {
+        let dna = b"ACGTGCGGATCGCGANN";
+        let poa = braid_fs(dna, &table1());
+        poa.write_dot("/tmp/simple.dot".to_string());
+        let seq = b"ACGTGCATCGCGANN";
+        let tst = &nuc2amino(seq, &table1());
+        let s = vec![b'^', b'$'];
+        let x = &[&s[0..1], tst, &s[1..2]].concat();
+        println!("frameshifting {:?}", String::from_utf8_lossy(x));
+        let aln = poa.align_sequence(x);
+        println!("scored {:?}", aln.score);
+        let r = poa.reconstruct(aln, "asdf", seq);
+        println!("reconstruction: {:?}", String::from_utf8_lossy(&r));
+        println!("{:?}", String::from_utf8_lossy(&nuc2amino(&r, &table1())));
+        assert!(false);
+    }
 }
