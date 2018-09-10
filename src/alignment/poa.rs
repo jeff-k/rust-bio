@@ -354,9 +354,7 @@ impl POAGraph {
                     i = i - 1;
                     codon = b"nnn";
                 }
-                Op::Fs(Some((_, _))) => {
-                    println!("YUO FORGOT");
-                }
+                Op::Fs(Some((_, _))) => {}
                 Op::Del(_) => {
                     //                    i = i + 3;
                 }
@@ -527,9 +525,11 @@ mod tests {
 
     #[test]
     fn test_simple_fs() {
-        //        let dna = b"ACGTGCGGATCGCGANN";
-        let seq = b"";
-        let dna = b"";
+        // ref
+        let seq = b"ACGTGCGGATCGCGA";
+
+        // query
+        let dna = b"ACGTGCGGATCGCGA";
 
         let poa = braid_fs(dna, &table1());
         poa.write_dot("/tmp/simple.dot".to_string());
