@@ -88,7 +88,7 @@ impl Aligner {
     pub fn new() -> Self {
         let score_fn = |a: u8, b: u8| {
             if a == b {
-                4i32
+                5i32
             } else {
                 0i32
             }
@@ -119,15 +119,15 @@ impl Aligner {
         for i in 1..(m + 1) {
             // TODO: these should be -1 * distance from head node
             traceback[i][0] = TracebackCell {
-                //                score: -1 * i as i32,
-                score: 0i32,
+                score: -1 * i as i32,
+                //score: 0i32,
                 op: Op::Del(None),
             };
         }
         for j in 1..(n + 1) {
             traceback[0][j] = TracebackCell {
-                //                score: -1 * j as i32,
-                score: 0i32,
+                score: -1 * j as i32,
+                //score: 0i32,
                 op: Op::Ins(None),
             };
         }
@@ -161,7 +161,7 @@ impl Aligner {
                             op: Op::Match(None),
                         },
                         TracebackCell {
-                            score: traceback[0][j].score - 0i32,
+                            score: traceback[0][j].score - 1i32,
                             op: Op::Del(None),
                         },
                         TracebackCell {
@@ -197,7 +197,7 @@ impl Aligner {
                             del_max = max(
                                 del_max,
                                 TracebackCell {
-                                    score: traceback[i_p][j].score - 10i32,
+                                    score: traceback[i_p][j].score - 1i32,
                                     op: Op::Del(Some((i_p - 1, i))),
                                 },
                             );
@@ -205,7 +205,7 @@ impl Aligner {
                             fs_max = max(
                                 fs_max,
                                 TracebackCell {
-                                    score: traceback[i_p][j - 1].score + 0,
+                                    score: traceback[i_p][j - 1].score + weight,
                                     op: Op::Fs(Some((i_p - 1, weight))),
                                 },
                             );
@@ -227,7 +227,7 @@ impl Aligner {
             }
         }
 
-        dump_traceback(&traceback, g, query);
+        //dump_traceback(&traceback, g, query);
 
         // Now backtrack through the matrix to construct an optimal path
         let mut i = last.index() + 1;
@@ -346,12 +346,12 @@ impl POAGraph {
                 Op::Fs(None) => {}
                 Op::Fs(Some((_, -2))) => {
                     //                    out.push(b"nnn");
-                    i = i + 2;
+                    i = i - 2;
                     codon = b"nnn";
                 }
                 Op::Fs(Some((_, -3))) => {
                     //                    out.push(b"nnn");
-                    i = i + 1;
+                    i = i - 1;
                     codon = b"nnn";
                 }
                 Op::Fs(Some((_, _))) => {
@@ -445,6 +445,12 @@ pub fn braid_fs(dna: TextSlice, table: &Translation_Table) -> POAGraph {
     println!("braiding {:?}", String::from_utf8_lossy(&d));
     let mut poa = POAGraph::new("s", &d);
     poa.braid(&nuc2amino(&dna[1..], table), &nuc2amino(&dna[2..], table));
+    println!(
+        "frames:\n{:?}\n{:?}\n{:?}",
+        String::from_utf8_lossy(&nuc2amino(&dna, table)),
+        String::from_utf8_lossy(&nuc2amino(&dna[1..], table)),
+        String::from_utf8_lossy(&nuc2amino(&dna[2..], table))
+    );
     poa
 }
 
@@ -516,22 +522,25 @@ mod tests {
             "{:?}",
             String::from_utf8_lossy(&nuc2amino(&r, &test_table()))
         );
-        assert!(true);
+        assert_eq!(r, b"abcdefghijklmnopqr");
     }
 
     #[test]
     fn test_simple_fs() {
-        let dna = b"ACGTGCGGATCGCGANN";
+        //        let dna = b"ACGTGCGGATCGCGANN";
+        let seq = b"";
+        let dna = b"";
+
         let poa = braid_fs(dna, &table1());
         poa.write_dot("/tmp/simple.dot".to_string());
-        let seq = b"ACGTGCATCGCGANN";
+        //        let seq = b"ACGTGCATCGCGANN";
         let tst = &nuc2amino(seq, &table1());
         let s = vec![b'^', b'$'];
         let x = &[&s[0..1], tst, &s[1..2]].concat();
         println!("frameshifting {:?}", String::from_utf8_lossy(x));
         let aln = poa.align_sequence(x);
         println!("scored {:?}", aln.score);
-        let r = poa.reconstruct(aln, "asdf", seq);
+        let r = poa.reconstruct(aln, "asdf", dna);
         println!("reconstruction: {:?}", String::from_utf8_lossy(&r));
         println!("{:?}", String::from_utf8_lossy(&nuc2amino(&r, &table1())));
         assert!(false);
