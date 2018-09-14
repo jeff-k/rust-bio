@@ -1,9 +1,9 @@
-// Copyright 2017 Brett Bowman
+// Copyright 2017-2018 Brett Bowman, Jeff Knaggs
 // Licensed under the MIT license (http://opensource.org/licenses/MIT)
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! Partial-Order Alignment for fast alignment and consensus of long homologous sequences.
+//! Partial-Order Alignment for fast alignment and consensus of multiple homologous sequences.
 //!
 //! For the original concept and theory, see:
 //! * Lee, Christopher, Catherine Grasso, and Mark F. Sharlow. "Multiple sequence alignment using
@@ -11,38 +11,45 @@
 //! * Lee, Christopher. "Generating consensus sequences from partial order multiple sequence
 //! alignment graphs." Bioinformatics 19.8 (2003): 999-1008.
 //!
-//! For a reference implementation that inspired this code, see poapy:
+//! For a modern reference implementation, see poapy:
 //! https://github.com/ljdursi/poapy
+//!
+//! # Example
+//!
+//! ```
+//! use bio::alignment::poa::*;
+//! let x = b"AAAAAAA";
+//! let y = b"AABBBAA";
+//! let z = b"AABCBAA";
+//!
+//! let score = |a: u8, b: u8| if a == b { 1i32 } else { -1i32 };
+//! let mut aligner = Aligner::from_string(x, -1, &score);
+//! assert_eq!(aligner.global(z).score, 1);
+//! aligner.add_sequence(y);
+//! // z differs from its closest homologue in the graph by one base
+//! assert_eq!(aligner.global(z).score, 5);
+//! ```
 
 use std::cmp::{max, Ordering};
-use std::error::Error;
-use std::fs::File;
-use std::io::Write;
-use std::str;
 
 use utils::TextSlice;
 
-use alphabets::translation::{nuc2amino, table1, Translation_Table};
-use petgraph::dot::Dot;
+use alignment::pairwise::{MatchFunc, Scoring};
+use alignment::AlignmentMode;
+
 use petgraph::graph::NodeIndex;
 use petgraph::visit::Topo;
+
 use petgraph::{Directed, Graph, Incoming};
 
 pub const MIN_SCORE: i32 = -858_993_459; // negative infinity; see alignment/pairwise/mod.rs
-
-/// A Partial-Order Alignment Graph
-pub struct POAGraph {
-    // a POAGraph struct stores a reference DAG and labels the edges with the
-    // count or names of the input sequences (TODO)
-    graph: Graph<u8, i32, Directed, usize>,
-}
 
 // Unlike with a total order we may have arbitrary successors in the
 // traceback matrix. I have not yet figured out what the best level of
 // detail to store is, so Match and Del operations remember In and Out
 // nodes on the reference graph.
 #[derive(Debug, Clone)]
-pub enum Op {
+pub enum AlignmentOperation {
     Match(Option<(usize, usize)>),
     Del(Option<(usize, usize)>),
     Ins(Option<usize>),
@@ -50,18 +57,16 @@ pub enum Op {
 }
 
 pub struct Alignment {
-    score: i32,
-    operations: Vec<Op>,
-}
-
-pub struct Aligner {
-    scoring: fn(u8, u8) -> i32,
+    pub score: i32,
+    //    xstart: Edge,
+    operations: Vec<AlignmentOperation>,
+    mode: AlignmentMode,
 }
 
 #[derive(Debug, Clone)]
 struct TracebackCell {
     score: i32,
-    op: Op,
+    op: AlignmentOperation,
 }
 
 impl Ord for TracebackCell {
@@ -82,152 +87,195 @@ impl PartialEq for TracebackCell {
     }
 }
 
+//impl Default for TracebackCell { }
+
 impl Eq for TracebackCell {}
 
-impl Aligner {
-    pub fn new() -> Self {
-        let score_fn = |a: u8, b: u8| {
-            if a == b {
-                5i32
-            } else {
-                0i32
-            }
-        };
-        Aligner { scoring: score_fn }
-    }
+struct Traceback {
+    rows: usize,
+    cols: usize,
+    matrix: Vec<Vec<TracebackCell>>,
+}
 
-    /// Naive Needleman-Wunsch
-    /// Populates the traceback matrix in $O(n^2)$ time using
-    /// petgraph's constant time topological traversal
-    pub fn global(&mut self, g: &Graph<u8, i32, Directed, usize>, query: TextSlice) -> Alignment {
-        // dimensions of the traceback matrix
-        let (m, n) = (g.node_count(), query.len());
-
-        // initialize matrix
-        let mut traceback: Vec<Vec<TracebackCell>> = vec![
+impl Traceback {
+    /// Create a Traceback matrix with given maximum sizes
+    ///
+    /// # Arguments
+    ///
+    /// * `m` - the number of nodes in the DAG
+    /// * `n` - the length of the query sequence
+    ///
+    fn with_capacity(m: usize, n: usize) -> Self {
+        let mut matrix = vec![
             vec![
                 TracebackCell {
                     score: 0,
-                    op: Op::Match(None)
+                    op: AlignmentOperation::Match(None)
                 };
                 n + 1
             ];
             m + 1
         ];
-        let mut ops: Vec<Op> = vec![];
-
         for i in 1..(m + 1) {
             // TODO: these should be -1 * distance from head node
-            traceback[i][0] = TracebackCell {
-                score: -1 * i as i32,
-                //score: 0i32,
-                op: Op::Del(None),
+            matrix[i][0] = TracebackCell {
+                score: -1 * i as i32, // gap_open penalty
+                op: AlignmentOperation::Del(None),
             };
         }
         for j in 1..(n + 1) {
-            traceback[0][j] = TracebackCell {
+            matrix[0][j] = TracebackCell {
                 score: -1 * j as i32,
-                //score: 0i32,
-                op: Op::Ins(None),
+                op: AlignmentOperation::Ins(None),
             };
         }
 
-        traceback[0][0] = TracebackCell {
+        Traceback {
+            rows: m,
+            cols: n,
+            matrix: matrix,
+        }
+    }
+}
+
+/// A global aligner on partially ordered graphs
+///
+/// Internally stores a directed acyclic graph datastructure that informs the topology of the
+/// traceback matrix. A mutable Aligner may have additional sequences added to the internal
+/// partially ordered graph.
+///
+/// The partial order is expressed with a directed acyclic graph and informs the traversal of the
+/// traceback matrix.
+///
+pub struct Aligner<F: MatchFunc> {
+    scoring: Scoring<F>,
+    traceback: Traceback,
+    pub graph: Graph<u8, i32, Directed, usize>,
+}
+
+impl<F: MatchFunc> Aligner<F> {
+    /// Create a new aligner instance from an initial reference sequence and alignment penalties.
+    ///
+    /// # Arguments
+    ///
+    /// * `reference` - a reference TextSlice to populate the initial reference graph
+    /// * `gap_open` - the negative score assigned when branching from the reference graph
+    /// * `match_fn` - the pairwise score for substitutions (see bio::scores)
+    ///
+    pub fn from_string(reference: TextSlice, gap_open: i32, match_fn: F) -> Self {
+        let mut graph: Graph<u8, i32, Directed, usize> =
+            Graph::with_capacity(reference.len(), reference.len() - 1);
+        let mut prev: NodeIndex<usize> = graph.add_node(reference[0]);
+        let mut node: NodeIndex<usize>;
+        for i in 1..reference.len() {
+            node = graph.add_node(reference[i]);
+            graph.add_edge(prev, node, 1);
+            prev = node;
+        }
+
+        Aligner {
+            scoring: Scoring::new(gap_open, 0, match_fn),
+            traceback: Traceback::with_capacity(0, 0),
+            graph: graph,
+        }
+    }
+
+    /// Create a new aligner instance from the directed acyclic graph of another.
+    ///
+    /// # Arguments
+    ///
+    /// * `poa` - the partially ordered reference alignment
+    /// * `gap_open` - the negative score assigned when branch from the reference graph
+    /// * `match_fn` - the pairwise score for substitutions (see bio::scores)
+    ///
+    pub fn from_graph(poa: Graph<u8, i32, Directed, usize>, gap_open: i32, match_fn: F) -> Self {
+        Aligner {
+            scoring: Scoring::new(gap_open, 0, match_fn),
+            traceback: Traceback::with_capacity(0, 0),
+            graph: poa,
+        }
+    }
+
+    /// A global Needleman-Wunsch aligner on partially ordered graphs.
+    ///
+    /// # Arguments
+    /// * `query` - the query TextSlice to align against the internal graph member
+    ///
+    pub fn global(&mut self, query: TextSlice) -> Alignment {
+        // dimensions of the traceback matrix
+        let (m, n) = (self.graph.node_count(), query.len());
+        self.traceback = Traceback::with_capacity(m, n);
+
+        // optimal AlignmentOperation path
+        let mut ops: Vec<AlignmentOperation> = vec![];
+
+        self.traceback.matrix[0][0] = TracebackCell {
             score: 0,
-            op: Op::Match(None),
+            op: AlignmentOperation::Match(None),
         };
 
         // construct the score matrix (naive)
-        let mut topo = Topo::new(&g);
+        let mut topo = Topo::new(&self.graph);
 
         // store the last visited node in topological order so that
         // we can index into the end of the alignment when we backtrack
         let mut last: NodeIndex<usize> = NodeIndex::new(0);
-        while let Some(node) = topo.next(&g) {
+        while let Some(node) = topo.next(&self.graph) {
             // reference base and index
-            let r = g.raw_nodes()[node.index()].weight; // reference base at previous index
+            let r = self.graph.raw_nodes()[node.index()].weight; // reference base at previous index
             let i = node.index() + 1;
             last = node;
             // iterate over the predecessors of this node
-            let prevs: Vec<NodeIndex<usize>> = g.neighbors_directed(node, Incoming).collect();
+            let prevs: Vec<NodeIndex<usize>> =
+                self.graph.neighbors_directed(node, Incoming).collect();
             // query base and its index in the DAG (traceback matrix rows)
             for (j_p, q) in query.iter().enumerate() {
                 let j = j_p + 1;
                 // match and deletion scores for the first reference base
-                let (mat, del, fs) = if prevs.len() == 0 {
-                    (
-                        TracebackCell {
-                            score: traceback[0][j - 1].score + (self.scoring)(r, *q),
-                            op: Op::Match(None),
-                        },
-                        TracebackCell {
-                            score: traceback[0][j].score - 1i32,
-                            op: Op::Del(None),
-                        },
-                        TracebackCell {
-                            score: MIN_SCORE,
-                            op: Op::Fs(None),
-                        },
-                    )
+                let max_cell = if prevs.len() == 0 {
+                    TracebackCell {
+                        score: self.traceback.matrix[0][j - 1].score
+                            + self.scoring.match_fn.score(r, *q),
+                        op: AlignmentOperation::Match(None),
+                    }
                 } else {
-                    let mut mat_max = TracebackCell {
+                    let mut max_cell = TracebackCell {
                         score: MIN_SCORE,
-                        op: Op::Match(None),
-                    };
-                    let mut del_max = TracebackCell {
-                        score: MIN_SCORE,
-                        op: Op::Del(None),
-                    };
-                    let mut fs_max = TracebackCell {
-                        score: MIN_SCORE,
-                        op: Op::Fs(None),
+                        op: AlignmentOperation::Match(None),
                     };
                     for prev_n in 0..prevs.len() {
                         let i_p: usize = prevs[prev_n].index() + 1; // index of previous node
-                        let edge = g.find_edge(prevs[prev_n], node).unwrap();
-                        let weight = g.raw_edges()[edge.index()].weight;
-                        if weight == 0 {
-                            mat_max = max(
-                                mat_max,
+                        max_cell = max(
+                            max_cell,
+                            max(
                                 TracebackCell {
-                                    score: traceback[i_p][j - 1].score + (self.scoring)(r, *q),
-                                    op: Op::Match(Some((i_p - 1, i - 1))),
+                                    score: self.traceback.matrix[i_p][j - 1].score
+                                        + self.scoring.match_fn.score(r, *q),
+                                    op: AlignmentOperation::Match(Some((i_p - 1, i - 1))),
                                 },
-                            );
-                            del_max = max(
-                                del_max,
                                 TracebackCell {
-                                    score: traceback[i_p][j].score - 1i32,
-                                    op: Op::Del(Some((i_p - 1, i))),
+                                    score: self.traceback.matrix[i_p][j].score
+                                        + self.scoring.gap_open,
+                                    op: AlignmentOperation::Del(Some((i_p - 1, i))),
                                 },
-                            );
-                        } else {
-                            fs_max = max(
-                                fs_max,
-                                TracebackCell {
-                                    score: traceback[i_p][j - 1].score + weight,
-                                    op: Op::Fs(Some((i_p - 1, weight))),
-                                },
-                            );
-                        }
+                            ),
+                        );
                     }
-                    (mat_max, del_max, fs_max)
+                    max_cell
                 };
+
                 let score = max(
-                    max(mat, fs),
-                    max(
-                        del,
-                        TracebackCell {
-                            score: traceback[i][j - 1].score - 10i32,
-                            op: Op::Ins(Some(i - 1)),
-                        },
-                    ),
+                    max_cell,
+                    TracebackCell {
+                        score: self.traceback.matrix[i][j - 1].score + self.scoring.gap_open,
+                        op: AlignmentOperation::Ins(Some(i - 1)),
+                    },
                 );
-                traceback[i][j] = score;
+                self.traceback.matrix[i][j] = score;
             }
         }
 
-        //dump_traceback(&traceback, g, query);
+        //dump_traceback(&self.traceback, g, query);
 
         // Now backtrack through the matrix to construct an optimal path
         let mut i = last.index() + 1;
@@ -236,32 +284,27 @@ impl Aligner {
         while i > 0 && j > 0 {
             // push operation and edge corresponding to (one of the) optimal
             // routes
-            ops.push(traceback[i][j].op.clone());
-            match traceback[i][j].op {
-                Op::Match(Some((p, _))) => {
+            ops.push(self.traceback.matrix[i][j].op.clone());
+            match self.traceback.matrix[i][j].op {
+                AlignmentOperation::Match(Some((p, _))) => {
                     i = p + 1;
                     j = j - 1;
                 }
-                Op::Del(Some((p, _))) => {
+                AlignmentOperation::Del(Some((p, _))) => {
                     i = p + 1;
                 }
-                Op::Ins(Some(p)) => {
+                AlignmentOperation::Ins(Some(p)) => {
                     i = p + 1;
                     j = j - 1;
                 }
-                Op::Match(None) => {
+                AlignmentOperation::Match(None) => {
                     break;
                 }
-                Op::Del(None) => {
+                AlignmentOperation::Del(None) => {
                     j = j - 1;
                 }
-                Op::Ins(None) => {
+                AlignmentOperation::Ins(None) => {
                     i = i - 1;
-                }
-                Op::Fs(None) => {}
-                Op::Fs(Some((p, weight))) => {
-                    i = p + 1;
-                    j = j - 1;
                 }
             }
         }
@@ -269,55 +312,18 @@ impl Aligner {
         ops.reverse();
 
         Alignment {
-            score: traceback[last.index() + 1][n].score,
+            score: self.traceback.matrix[last.index() + 1][n].score,
             operations: ops,
+            mode: AlignmentMode::Custom,
         }
     }
-}
 
-impl POAGraph {
-    /// Create new POAGraph instance initialized with a sequence
+    /// Incorporate a new sequence into a graph from an alignment
     ///
     /// # Arguments
     ///
-    /// * `label` - sequence label for an initial sequence
-    /// * `sequence` - TextSlice from which to initialize the POA
-    ///
-    pub fn new(_label: &str, sequence: TextSlice) -> POAGraph {
-        let graph = POAGraph::seq_to_graph(sequence);
-        POAGraph { graph: graph }
-    }
-
-    /// Add a new unaligned sequence to the underlying graph.
-    /// Useful for both initializing the graph with its first sequence, as
-    /// well as adding unaligned prefix or suffix sequence from partially
-    /// aligned reads.
-    ///
-    /// # Arguments
-    ///
-    /// * `label` - the id of the sequence to be added
-    /// * `sequence` - The sequence to be added
-    ///
-    fn seq_to_graph(sequence: TextSlice) -> Graph<u8, i32, Directed, usize> {
-        // this should return a POAGraph
-        let mut graph: Graph<u8, i32, Directed, usize> =
-            Graph::with_capacity(sequence.len(), sequence.len() - 1);
-        let mut prev: NodeIndex<usize> = graph.add_node(sequence[0]);
-        let mut node: NodeIndex<usize>;
-        for i in 1..sequence.len() {
-            node = graph.add_node(sequence[i]);
-            graph.add_edge(prev, node, 0);
-            prev = node;
-        }
-        graph
-    }
-
-    /// Align a sequence to the current graph and return the
-    /// resulting alignment object
-    ///
-    /// # Arguments
-    ///
-    /// * `sequence` - The new sequence to align as a text slice
+    /// * `aln` - The alignment of the new sequence to the graph
+    /// * `seq` - The sequence being incorporated
     ///
     pub fn align_sequence(&self, seq: &[u8]) -> Alignment {
         let mut aligner = Aligner::new();
@@ -325,131 +331,60 @@ impl POAGraph {
     }
 
     pub fn reconstruct(&self, aln: Alignment, _label: &str, seq: TextSlice) -> Vec<u8> {
+=======
+    pub fn add_alignment(&mut self, aln: Alignment, seq: TextSlice) {
+>>>>>>> partial-order-aligner
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
         let mut i: usize = 0;
-        let mut out = Vec::new();
-
-        for op in aln.operations[1..].iter() {
-            if i + 3 > seq.len() {
-                break;
-            }
-            let mut codon = &seq[i..i + 3];
+        for op in aln.operations {
             match op {
-                Op::Match(None) => {
-                    codon = &seq[i..i + 3];
-                    i = i + 3;
+                AlignmentOperation::Match(None) => {
+                    i = i + 1;
                 }
-                Op::Match(Some((_, _))) => {
-                    codon = &seq[i..i + 3];
-                    i = i + 3;
+                AlignmentOperation::Match(Some((_, p))) => {
+                    let node = NodeIndex::new(p);
+                    if seq[i] != self.graph.raw_nodes()[p].weight {
+                        let node = self.graph.add_node(seq[i]);
+                        self.graph.add_edge(prev, node, 1);
+                        prev = node;
+                    } else {
+                        // increment node weight
+                        match self.graph.find_edge(prev, node) {
+                            Some(edge) => {
+                                *self.graph.edge_weight_mut(edge).unwrap() += 1;
+                            }
+                            None => {
+                                // where the previous node was newly added
+                                self.graph.add_edge(prev, node, 1);
+                            }
+                        }
+                        prev = NodeIndex::new(p);
+                    }
+                    i = i + 1;
                 }
-                Op::Fs(None) => {}
-                Op::Fs(Some((_, -2))) => {
-                    //                    out.push(b"nnn");
-                    i = i - 2;
-                    codon = b"nnn";
+                AlignmentOperation::Ins(None) => {
+                    i = i + 1;
                 }
-                Op::Fs(Some((_, -3))) => {
-                    //                    out.push(b"nnn");
-                    i = i - 1;
-                    codon = b"nnn";
+                AlignmentOperation::Ins(Some(_)) => {
+                    let node = self.graph.add_node(seq[i]);
+                    self.graph.add_edge(prev, node, 1);
+                    prev = node;
+                    i = i + 1;
                 }
-                Op::Fs(Some((_, _))) => {}
-                Op::Del(_) => {
-                    //                    i = i + 3;
-                }
-                Op::Ins(_) => {
-                    i = i + 3;
-                    codon = &seq[i..i + 3];
-                }
+                AlignmentOperation::Del(_) => {} // we should only have to skip over deleted nodes
             }
-            //           let codon = &seq[(i-3)..i];
-            println!("{:?} - {:?}", String::from_utf8_lossy(&codon), op);
-            out.push(codon);
         }
-        out.concat()
     }
 
-    pub fn braid(&mut self, s1: TextSlice, s2: TextSlice) {
-        let mut fs1p: NodeIndex<usize> = NodeIndex::new(0);
-        let mut fs1pp: NodeIndex<usize> = NodeIndex::new(0);
-
-        let mut fs2p: NodeIndex<usize> = NodeIndex::new(0);
-        let mut fs2pp: NodeIndex<usize> = NodeIndex::new(0);
-
-        let mut prev: NodeIndex<usize> = NodeIndex::new(0);
-
-        //        let mut fs1_2: NodeIndex<usize> = NodeIndex::new(0);
-        //        let mut fs2_2: NodeIndex<usize> = NodeIndex::new(0);
-
-        let last = NodeIndex::new(self.graph.node_count() - 1);
-        for i in 0..(self.graph.node_count() - 2) {
-            let node = NodeIndex::new(i + 1);
-
-            let fs1 = self.graph.add_node(s1[i]);
-            let fs2 = self.graph.add_node(s2[i]);
-
-            if i > 1 {
-                self.graph.add_edge(fs1pp, node, -3);
-                self.graph.add_edge(fs2pp, node, -2);
-                self.graph.add_edge(fs2pp, fs1, -3);
-            }
-
-            if i > 0 {
-                //self.graph.add_edge(fs1p, node, -2);
-                self.graph.add_edge(fs1p, fs2, -2);
-                self.graph.add_edge(fs1p, fs1, 0);
-                self.graph.add_edge(fs2p, fs2, 0);
-            }
-
-            self.graph.add_edge(prev, fs1, -2);
-            self.graph.add_edge(prev, fs2, -3);
-
-            fs1pp = fs1p;
-            fs2pp = fs2p;
-
-            fs1p = fs1;
-            fs2p = fs2;
-            prev = node;
-        }
-        self.graph.add_edge(fs1p, last, 0);
-        self.graph.add_edge(fs2p, last, 0);
-    }
-
-    /// Write the current graph to a specified filepath in dot format for
-    /// visualization, primarily for debugging / diagnostics
+    /// Align and incorporate a sequence to the partially ordered graph from a TextSlice
     ///
     /// # Arguments
+    /// * `seq` - TextSlice to incorporate into the partial order aligner's graph
     ///
-    /// * `filename` - The filepath to write the dot file to, as a String
-    ///
-    pub fn write_dot(&self, filename: String) {
-        let mut file = match File::create(&filename) {
-            Err(why) => panic!("couldn't open file {}: {}", filename, why.description()),
-            Ok(file) => file,
-        };
-        let g = self.graph.map(|_, nw| *nw as char, |_, ew| ew);
-        match file.write_all(Dot::new(&g).to_string().as_bytes()) {
-            Err(why) => panic!("couldn't write to file {}: {}", filename, why.description()),
-            _ => (),
-        }
+    pub fn add_sequence(&mut self, seq: TextSlice) {
+        let alignment = self.global(seq);
+        self.add_alignment(alignment, seq);
     }
-}
-
-pub fn braid_fs(dna: TextSlice, table: &Translation_Table) -> POAGraph {
-    let s = vec![b'^', b'$'];
-    println!("entering braid");
-    let d = [&s[0..1], &nuc2amino(dna, table), &s[1..2]].concat();
-    println!("braiding {:?}", String::from_utf8_lossy(&d));
-    let mut poa = POAGraph::new("s", &d);
-    poa.braid(&nuc2amino(&dna[1..], table), &nuc2amino(&dna[2..], table));
-    println!(
-        "frames:\n{:?}\n{:?}\n{:?}",
-        String::from_utf8_lossy(&nuc2amino(&dna, table)),
-        String::from_utf8_lossy(&nuc2amino(&dna[1..], table)),
-        String::from_utf8_lossy(&nuc2amino(&dna[2..], table))
-    );
-    poa
 }
 
 // print out a traceback matrix
@@ -462,13 +397,10 @@ fn dump_traceback(
     let (m, n) = (g.node_count(), query.len());
     print!(".\t");
     for i in 0..n {
-        print!("{:?}\t", String::from_utf8_lossy(&[query[i]]));
+        print!("{:?}\t", query[i]);
     }
     for i in 0..m {
-        print!(
-            "\n{:?}\t",
-            String::from_utf8_lossy(&[g.raw_nodes()[i].weight])
-        );
+        print!("\n{:?}\t", g.raw_nodes()[i].weight);
         for j in 0..n {
             print!("{}.\t", traceback[i + 1][j + 1].score);
         }
@@ -476,16 +408,35 @@ fn dump_traceback(
     print!("\n");
 }
 
-//pub fn frameshift(dna: TextSlice) -> Vec<Op> {
-//   for fs1 in dna.chunks(2) {
-//   }
-//}
-
 #[cfg(test)]
 mod tests {
-    use alignment::poa::{braid_fs, POAGraph};
-    use alphabets::translation::{nuc2amino, table1, test_table};
+    use alignment::poa::Aligner;
+    use petgraph::dot::Dot;
     use petgraph::graph::NodeIndex;
+    use petgraph::{Directed, Graph};
+    use std::error::Error;
+    use std::fs::File;
+    use std::io::Write;
+
+    /// Write the current graph to a specified filepath in dot format for
+    /// visualization, primarily for debugging / diagnostics
+    ///
+    /// # Arguments
+    ///
+    /// * `filename` - The filepath to write the dot file to, as a String
+    ///
+    #[allow(dead_code)]
+    fn write_dot(graph: Graph<u8, i32, Directed, usize>, filename: String) {
+        let mut file = match File::create(&filename) {
+            Err(why) => panic!("couldn't open file {}: {}", filename, why.description()),
+            Ok(file) => file,
+        };
+        let g = graph.map(|_, nw| *nw as char, |_, ew| ew);
+        match file.write_all(Dot::new(&g).to_string().as_bytes()) {
+            Err(why) => panic!("couldn't write to file {}: {}", filename, why.description()),
+            _ => (),
+        }
+    }
 
     #[test]
     fn test_braiding() {
