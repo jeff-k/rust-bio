@@ -116,52 +116,6 @@ impl Traceback {
     }
 }
 
-fn braid(mut graph: &Graph<u8, i32, Directed, usize>, s1: TextSlice, s2: TextSlice) {
-    let mut fs1p: NodeIndex<usize> = NodeIndex::new(0);
-    let mut fs1pp: NodeIndex<usize> = NodeIndex::new(0);
-
-    let mut fs2p: NodeIndex<usize> = NodeIndex::new(0);
-    let mut fs2pp: NodeIndex<usize> = NodeIndex::new(0);
-
-    let mut prev: NodeIndex<usize> = NodeIndex::new(0);
-
-    //        let mut fs1_2: NodeIndex<usize> = NodeIndex::new(0);
-    //        let mut fs2_2: NodeIndex<usize> = NodeIndex::new(0);
-
-    let last = NodeIndex::new(graph.node_count() - 1);
-    for i in 0..(graph.node_count() - 2) {
-        let node = NodeIndex::new(i + 1);
-
-        let fs1 = graph.add_node(s1[i]);
-        let fs2 = graph.add_node(s2[i]);
-
-        if i > 1 {
-            graph.add_edge(fs1pp, node, -2);
-            graph.add_edge(fs2pp, node, -1);
-            graph.add_edge(fs2pp, fs1, -2);
-        }
-
-        if i > 0 {
-            //graph.add_edge(fs1p, node, -2);
-            graph.add_edge(fs1p, fs2, -1);
-            graph.add_edge(fs1p, fs1, 0);
-            graph.add_edge(fs2p, fs2, 0);
-        }
-
-        graph.add_edge(prev, fs1, -1);
-        graph.add_edge(prev, fs2, -2);
-
-        fs1pp = fs1p;
-        fs2pp = fs2p;
-
-        fs1p = fs1;
-        fs2p = fs2;
-        prev = node;
-    }
-    graph.add_edge(fs1p, last, 0);
-    graph.add_edge(fs2p, last, 0);
-}
-
 /// A global aligner on partially ordered graphs
 ///
 /// Internally stores a directed acyclic graph datastructure that informs the topology of the
@@ -206,13 +160,6 @@ impl<F: MatchFunc> Aligner<F> {
             prev = node;
         }
 
-        let s = vec![b'^', b'$'];
-        braid(
-            &graph,
-            &nuc2amino(&reference[1..], &table),
-            &nuc2amino(&reference[2..], &table),
-        );
-
         Aligner {
             scoring: Scoring::new(gap_open, 0, match_fn),
             fs_penalty: fs_penalty,
@@ -220,6 +167,57 @@ impl<F: MatchFunc> Aligner<F> {
             traceback: Traceback::with_capacity(0, 0),
             graph: graph,
         }
+    }
+
+    pub fn braid(
+        mut graph: &Graph<u8, i32, Directed, usize>,
+        s1: TextSlice,
+        s2: TextSlice,
+        fs_penalty: i32,
+    ) -> () {
+        let mut fs1p: NodeIndex<usize> = NodeIndex::new(0);
+        let mut fs1pp: NodeIndex<usize> = NodeIndex::new(0);
+
+        let mut fs2p: NodeIndex<usize> = NodeIndex::new(0);
+        let mut fs2pp: NodeIndex<usize> = NodeIndex::new(0);
+
+        let mut prev: NodeIndex<usize> = NodeIndex::new(0);
+
+        //        let mut fs1_2: NodeIndex<usize> = NodeIndex::new(0);
+        //        let mut fs2_2: NodeIndex<usize> = NodeIndex::new(0);
+
+        let last = NodeIndex::new(graph.node_count() - 1);
+        for i in 0..(graph.node_count() - 2) {
+            let node = NodeIndex::new(i + 1);
+
+            let fs1 = graph.add_node(s1[i]);
+            let fs2 = graph.add_node(s2[i]);
+
+            if i > 1 {
+                graph.add_edge(fs1pp, node, 2 * fs_penalty);
+                graph.add_edge(fs2pp, node, 1 * fs_penalty);
+                graph.add_edge(fs2pp, fs1, 2 * fs_penalty);
+            }
+
+            if i > 0 {
+                //graph.add_edge(fs1p, node, -2);
+                graph.add_edge(fs1p, fs2, 1 * fs_penalty);
+                graph.add_edge(fs1p, fs1, 0);
+                graph.add_edge(fs2p, fs2, 0);
+            }
+
+            graph.add_edge(prev, fs1, 1 * fs_penalty);
+            graph.add_edge(prev, fs2, 2 * fs_penalty);
+
+            fs1pp = fs1p;
+            fs2pp = fs2p;
+
+            fs1p = fs1;
+            fs2p = fs2;
+            prev = node;
+        }
+        graph.add_edge(fs1p, last, 0);
+        graph.add_edge(fs2p, last, 0);
     }
 
     /// A global Needleman-Wunsch aligner on partially ordered graphs.
