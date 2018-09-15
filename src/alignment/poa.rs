@@ -31,7 +31,7 @@ pub enum AlignmentOperation {
     Match(Option<(usize, usize)>),
     Del(Option<(usize, usize)>),
     Ins(Option<usize>),
-    Frameshift(Option<usize>),
+    Frameshift(Option<(usize, usize)>),
 }
 
 pub struct Alignment {
@@ -116,7 +116,7 @@ impl Traceback {
     }
 }
 
-fn braid(mut graph: Graph<u8, i32, Directed, usize>, s1: TextSlice, s2: TextSlice) {
+fn braid(mut graph: &Graph<u8, i32, Directed, usize>, s1: TextSlice, s2: TextSlice) {
     let mut fs1p: NodeIndex<usize> = NodeIndex::new(0);
     let mut fs1pp: NodeIndex<usize> = NodeIndex::new(0);
 
@@ -174,7 +174,7 @@ fn braid(mut graph: Graph<u8, i32, Directed, usize>, s1: TextSlice, s2: TextSlic
 pub struct Aligner<F: MatchFunc> {
     scoring: Scoring<F>,
     fs_penalty: i32,
-    table: table,
+    table: Translation_Table,
     traceback: Traceback,
     pub graph: Graph<u8, i32, Directed, usize>,
 }
@@ -190,12 +190,13 @@ impl<F: MatchFunc> Aligner<F> {
     ///
     pub fn from_string(
         reference: TextSlice,
-        table: &Translation_Table,
+        table: Translation_Table,
         fs_penalty: i32,
         gap_open: i32,
         match_fn: F,
     ) -> Self {
-        let d = [&s[0..1], &nuc2amino(reference, table), &s[1..2]].concat();
+        let s = vec![b'^', b'$'];
+        let d = [&s[0..1], &nuc2amino(reference, &table), &s[1..2]].concat();
         let mut graph: Graph<u8, i32, Directed, usize> = Graph::with_capacity(d.len(), d.len() - 1);
         let mut prev: NodeIndex<usize> = graph.add_node(d[0]);
         let mut node: NodeIndex<usize>;
@@ -207,9 +208,9 @@ impl<F: MatchFunc> Aligner<F> {
 
         let s = vec![b'^', b'$'];
         braid(
-            graph,
-            &nuc2amino(&reference[1..], table),
-            &nuc2amino(&reference[2..], table),
+            &graph,
+            &nuc2amino(&reference[1..], &table),
+            &nuc2amino(&reference[2..], &table),
         );
 
         Aligner {
@@ -270,8 +271,8 @@ impl<F: MatchFunc> Aligner<F> {
                     };
                     for prev_n in 0..prevs.len() {
                         let i_p: usize = prevs[prev_n].index() + 1; // index of previous node
-                        let edge = g.find_edge(prevs[prev_n], node).unwrap();
-                        let weight = g.raw_edges()[edge.index()].weight;
+                        let edge = self.graph.find_edge(prevs[prev_n], node).unwrap();
+                        let weight = self.graph.raw_edges()[edge.index()].weight;
                         if weight == 0 {
                             max_cell = max(
                                 max_cell,
@@ -292,7 +293,7 @@ impl<F: MatchFunc> Aligner<F> {
                             max_cell = max(
                                 max_cell,
                                 TracebackCell {
-                                    score: traceback[i_p][j - 1].score + weight,
+                                    score: self.traceback.matrix[i_p][j - 1].score + weight,
                                     op: AlignmentOperation::Frameshift(Some((i_p - 1, i))),
                                 },
                             );
@@ -366,39 +367,36 @@ impl<F: MatchFunc> Aligner<F> {
         let mut i: usize = 0;
         let mut out = Vec::new();
 
-        for (codon, op) in seq.chunks(3).zip(aln.operations[1..].iter()) {
+        for op in aln.operations.iter() {
+            if i + 3 >= seq.len() {
+                break;
+            }
+            let codon = &seq[i..i + 3];
             println!("{:?} - {:?}", String::from_utf8_lossy(codon), op);
             match op {
-                Op::Match(None) => {
+                AlignmentOperation::Match(None) => {
+                    i = i + 3;
+                }
+                AlignmentOperation::Match(Some((_, _))) => {
+                    out.push(codon);
+                    i = i + 3;
+                }
+                AlignmentOperation::Frameshift(_) => {
+                    out.push(b"nnn");
                     i = i + 1;
                 }
-                Op::Match(Some((_, _))) => {
+
+                AlignmentOperation::Ins(_) => {
+                    i = i + 3;
                     out.push(codon);
                 }
-                Op::Fs(_) => out.push(b"nnn"),
-                Op::Indel(_) => {}
+                AlignmentOperation::Del(_) => {
+                    i = i + 3;
+                    out.push(codon);
+                }
             }
         }
         out.concat()
-    }
-
-    /// Write the current graph to a specified filepath in dot format for
-    /// visualization, primarily for debugging / diagnostics
-    ///
-    /// # Arguments
-    ///
-    /// * `filename` - The filepath to write the dot file to, as a String
-    ///
-    pub fn write_dot(&self, filename: String) {
-        let mut file = match File::create(&filename) {
-            Err(why) => panic!("couldn't open file {}: {}", filename, why.description()),
-            Ok(file) => file,
-        };
-        let g = self.graph.map(|_, nw| *nw as char, |_, ew| ew);
-        match file.write_all(Dot::new(&g).to_string().as_bytes()) {
-            Err(why) => panic!("couldn't write to file {}: {}", filename, why.description()),
-            _ => (),
-        }
     }
 }
 
@@ -456,7 +454,9 @@ mod tests {
 
     #[test]
     fn test_braid() {
-        braid = Aligner::from_string(b"abcdefghijklmnopqrxx", &test_table());
+        let match_fn = |a: u8, b: u8| if a == b { 1i32 } else { -1i32 };
+        let mut braid =
+            Aligner::from_string(b"abcdefghijklmnopqrxx", test_table(), -1, -2, match_fn);
         braid.reconstruct(b"abcdefghiijklmnopqr");
     }
 
