@@ -151,7 +151,8 @@ impl<F: MatchFunc> Aligner<F> {
     ) -> Self {
         let s = vec![b'^', b'$'];
         let d = [&s[0..1], &nuc2amino(reference, &table), &s[1..2]].concat();
-        let mut graph: Graph<u8, i32, Directed, usize> = Graph::with_capacity(d.len(), d.len() - 1);
+        let mut graph: Graph<u8, i32, Directed, usize> =
+            Graph::with_capacity(d.len() * 3, d.len() * 3);
         let mut prev: NodeIndex<usize> = graph.add_node(d[0]);
         let mut node: NodeIndex<usize>;
         for i in 1..d.len() {
@@ -160,21 +161,6 @@ impl<F: MatchFunc> Aligner<F> {
             prev = node;
         }
 
-        Aligner {
-            scoring: Scoring::new(gap_open, 0, match_fn),
-            fs_penalty: fs_penalty,
-            table: table,
-            traceback: Traceback::with_capacity(0, 0),
-            graph: graph,
-        }
-    }
-
-    pub fn braid(
-        mut graph: &Graph<u8, i32, Directed, usize>,
-        s1: TextSlice,
-        s2: TextSlice,
-        fs_penalty: i32,
-    ) -> () {
         let mut fs1p: NodeIndex<usize> = NodeIndex::new(0);
         let mut fs1pp: NodeIndex<usize> = NodeIndex::new(0);
 
@@ -186,6 +172,8 @@ impl<F: MatchFunc> Aligner<F> {
         //        let mut fs1_2: NodeIndex<usize> = NodeIndex::new(0);
         //        let mut fs2_2: NodeIndex<usize> = NodeIndex::new(0);
 
+        let s1 = nuc2amino(&reference[1..], &table);
+        let s2 = nuc2amino(&reference[2..], &table);
         let last = NodeIndex::new(graph.node_count() - 1);
         for i in 0..(graph.node_count() - 2) {
             let node = NodeIndex::new(i + 1);
@@ -218,6 +206,14 @@ impl<F: MatchFunc> Aligner<F> {
         }
         graph.add_edge(fs1p, last, 0);
         graph.add_edge(fs2p, last, 0);
+
+        Aligner {
+            scoring: Scoring::new(gap_open, 0, match_fn),
+            fs_penalty: fs_penalty,
+            table: table,
+            traceback: Traceback::with_capacity(0, 0),
+            graph: graph,
+        }
     }
 
     /// A global Needleman-Wunsch aligner on partially ordered graphs.
@@ -359,8 +355,8 @@ impl<F: MatchFunc> Aligner<F> {
         }
     }
 
-    pub fn reconstruct(&self, seq: TextSlice) -> Vec<u8> {
-        let aln = self.global(seq);
+    pub fn reconstruct(&self, seq: TextSlice, aln: Alignment) -> Vec<u8> {
+        //        let mut aln = self.global(seq);
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
         let mut i: usize = 0;
         let mut out = Vec::new();
@@ -455,7 +451,12 @@ mod tests {
         let match_fn = |a: u8, b: u8| if a == b { 1i32 } else { -1i32 };
         let mut braid =
             Aligner::from_string(b"abcdefghijklmnopqrxx", test_table(), -1, -2, match_fn);
-        braid.reconstruct(b"abcdefghiijklmnopqr");
+        let aln = braid.global(b"abcdefghiijklmnopqr");
+        println!(
+            "reconstruction {:?}",
+            String::from_utf8_lossy(&braid.reconstruct(b"abcdefghiijklmnopqr", aln))
+        );
+        //assert!(false);
     }
 
 }
