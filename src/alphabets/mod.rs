@@ -93,11 +93,11 @@ impl RankTransform {
     pub fn transform<'a, T: IntoTextIterator<'a>>(&self, text: T) -> Vec<u8> {
         text.into_iter()
             .map(|&c| {
-                *self.ranks
+                *self
+                    .ranks
                     .get(c as usize)
                     .expect("Unexpected character in text.")
-            })
-            .collect()
+            }).collect()
     }
 
     /// Iterate over q-grams (substrings of length q) of given `text`. The q-grams are encoded

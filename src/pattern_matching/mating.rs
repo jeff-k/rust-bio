@@ -1,4 +1,4 @@
-// Copyright 2018 github.com/jeff-k
+// Copyright 2018 Jeff Knaggs
 // Licensed under the MIT license (http://opensource.org/licenses/MIT)
 // This file may not be copied, modified, or distributed
 // except according to those terms.
@@ -16,20 +16,20 @@
 //! assert_eq!(contig, b"tacgattcgattacgt");
 //! ```
 //!
-//! Mate pair merging procedes in two steps:
-//!   mate: identifying the optimal overlap length or rejecting the case
-//!   merge: combines overlapping sequences
+//! Mate pair merging proceeds in two steps:
+//! * mate: identifying the optimal overlap length or rejecting the case
+//! * merge: combines overlapping sequences
 //!
 //! Mating is governed by an objective function and merging resolves
-//! conflicts between sequences ("mending").
+//! conflicts between sequences.
 //!
-//! We also need to define the scores for which mating is acceptible. The
+//! We also need to define the scores for which mating is acceptable. The
 //! minimum overlap score and minimum overlap length could be guessed
 //! from the k-mer distribution. 25bp is the apparent standard.
 
 use std::cmp;
 
-// return the highest scoring overlap length above a threshold
+/// Determine the index of overlap for two reads.
 pub fn mate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: i16) -> Option<usize> {
     let max_overlap = cmp::min(r1.len(), r2.len());
     let min_overlap = overlap_bound - 1;
@@ -48,7 +48,7 @@ pub fn mate(r1: &[u8], r2: &[u8], overlap_bound: usize, min_score: i16) -> Optio
     None
 }
 
-// mating function using the Hamming rate
+/// Mating with the Hamming rate objective function. Complexity: O(n^2).
 pub fn mate_hamming_rate(
     r1: &[u8],
     r2: &[u8],
@@ -73,6 +73,7 @@ pub fn mate_hamming_rate(
     None
 }
 
+/// Mating objective function that penalizes mismatches.
 fn score(r1: &[u8], r2: &[u8]) -> i16 {
     let mut s: i16 = 0;
     let len = r1.len();
@@ -86,7 +87,7 @@ fn score(r1: &[u8], r2: &[u8]) -> i16 {
     s
 }
 
-// strict overlap mending that reports 'N' on disagreement
+/// Function that replaces disagreeing reads with 'N'.
 fn mend_consensus(a: u8, b: u8) -> u8 {
     if a == b {
         a
@@ -95,6 +96,7 @@ fn mend_consensus(a: u8, b: u8) -> u8 {
     }
 }
 
+/// Given two reads and the index of overlap, merge them together.
 pub fn merge(r1: &[u8], r2: &[u8], overlap: usize) -> Vec<u8> {
     let r1_end = r1.len() - overlap;
     let r2_end = r2.len() - overlap;
@@ -111,6 +113,7 @@ pub fn merge(r1: &[u8], r2: &[u8], overlap: usize) -> Vec<u8> {
     seq
 }
 
+/// Mend and return the overlapping region of two reads, given an index of overlap.
 pub fn truncate(r1: &[u8], r2: &[u8], overlap: usize) -> Vec<u8> {
     let r2_end = r2.len();
 

@@ -148,8 +148,7 @@ impl Index {
             .map(|record| Sequence {
                 name: record.name.clone(),
                 len: record.len,
-            })
-            .collect()
+            }).collect()
     }
 }
 
