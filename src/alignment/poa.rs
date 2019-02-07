@@ -38,6 +38,7 @@ use std::cmp::{max, Ordering};
 use std::error::Error;
 use std::fs::File;
 use std::io::Write;
+use std::ops::AddAssign;
 
 use utils::TextSlice;
 
@@ -239,14 +240,14 @@ impl Traceback {
 /// A partially ordered aligner builder
 ///
 /// Uses consuming builder pattern for constructing partial order alignments with method chaining
-pub struct Aligner<F: MatchFunc> {
+pub struct Aligner<F: MatchFunc, E: Default> {
     sequence_names: Vec<String>,
     traceback: Traceback,
     query: Vec<u8>,
-    poa: Poa<F>,
+    poa: Poa<F, E>,
 }
 
-impl<F: MatchFunc> Aligner<F> {
+impl<F: MatchFunc, E: Default> Aligner<F, E> {
     pub fn new(scoring: Scoring<F>, reference: TextSlice) -> Self {
         Aligner {
             sequence_names: vec![],
@@ -273,17 +274,22 @@ impl<F: MatchFunc> Aligner<F> {
     }
 }
 
+#[derive(Default)]
+struct Colours {
+    weight: Vec<usize>,
+}
+
 /// A partially ordered alignment graph
 ///
 /// A directed acyclic graph datastructure that represents the topology of a
 /// traceback matrix.
 ///
-pub struct Poa<F: MatchFunc> {
+pub struct Poa<F: MatchFunc, E: Default> {
     scoring: Scoring<F>,
-    pub graph: Graph<u8, i32, Directed, usize>,
+    pub graph: Graph<u8, E, Directed, usize>,
 }
 
-impl<F: MatchFunc> Poa<F> {
+impl<F: MatchFunc, E: Default> Poa<F, E> {
     /// Create a new aligner instance from the directed acyclic graph of another.
     ///
     /// # Arguments
@@ -291,7 +297,7 @@ impl<F: MatchFunc> Poa<F> {
     /// * `scoring` - the score struct
     /// * `poa` - the partially ordered reference alignment
     ///
-    pub fn new(scoring: Scoring<F>, graph: Graph<u8, i32, Directed, usize>) -> Self {
+    pub fn new(scoring: Scoring<F>, graph: Graph<u8, E, Directed, usize>) -> Self {
         Poa { scoring, graph }
     }
 
@@ -303,13 +309,13 @@ impl<F: MatchFunc> Poa<F> {
     /// * `reference` - a reference TextSlice to populate the initial reference graph
     ///
     pub fn from_string(scoring: Scoring<F>, seq: TextSlice) -> Self {
-        let mut graph: Graph<u8, i32, Directed, usize> =
+        let mut graph: Graph<u8, E, Directed, usize> =
             Graph::with_capacity(seq.len(), seq.len() - 1);
         let mut prev: NodeIndex<usize> = graph.add_node(seq[0]);
         let mut node: NodeIndex<usize>;
         for base in seq.iter().skip(1) {
             node = graph.add_node(*base);
-            graph.add_edge(prev, node, 1);
+            graph.add_edge(prev, node, E::default());
             prev = node;
         }
 
@@ -449,7 +455,7 @@ impl<F: MatchFunc> Poa<F> {
     /// * `aln` - The alignment of the new sequence to the graph
     /// * `seq` - The sequence being incorporated
     ///
-    pub fn add_alignment(&mut self, aln: &Alignment, seq: TextSlice) {
+    pub fn add_alignment(&mut self, aln: &Alignment, seq: TextSlice, edgef: FnMut(E)) {
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
         let mut i: usize = 0;
         for op in aln.operations.iter() {
@@ -461,17 +467,17 @@ impl<F: MatchFunc> Poa<F> {
                     let node = NodeIndex::new(*p);
                     if (seq[i] != self.graph.raw_nodes()[*p].weight) && (seq[i] != b'X') {
                         let node = self.graph.add_node(seq[i]);
-                        self.graph.add_edge(prev, node, 1);
+                        self.graph.add_edge(prev, node, E::default());
                         prev = node;
                     } else {
-                        // increment node weight
+                        // update edge weight
                         match self.graph.find_edge(prev, node) {
                             Some(edge) => {
-                                *self.graph.edge_weight_mut(edge).unwrap() += 1;
+                                edgef(*self.graph.edge_weight_mut(edge).unwrap());
                             }
                             None => {
                                 // where the previous node was newly added
-                                self.graph.add_edge(prev, node, 1);
+                                self.graph.add_edge(prev, node, E::default());
                             }
                         }
                         prev = NodeIndex::new(*p);
@@ -483,7 +489,7 @@ impl<F: MatchFunc> Poa<F> {
                 }
                 AlignmentOperation::Ins(Some(_)) => {
                     let node = self.graph.add_node(seq[i]);
-                    self.graph.add_edge(prev, node, 1);
+                    self.graph.add_edge(prev, node, E::default());
                     prev = node;
                     i += 1;
                 }
