@@ -25,7 +25,8 @@
 //! let z = b"AABCBAA";
 //!
 //! let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
-//! let mut aligner = Aligner::new(scoring, x);
+//! let edge_updater = EdgeUpdater::new(1, |a: i32, b:i32| a + b);
+//! let mut aligner = Aligner::new(scoring, edge_updater, x);
 //! // z differs from x in 3 locations
 //! assert_eq!(aligner.global(z).get_alignment().score, 1);
 //! aligner.global(y).add_to_graph(1);
@@ -40,6 +41,7 @@ use std::fs::File;
 use std::io::Write;
 use std::ops::AddAssign;
 
+use std::collections::HashSet;
 use utils::TextSlice;
 
 use alignment::pairwise::{MatchFunc, Scoring};
@@ -240,20 +242,20 @@ impl Traceback {
 /// A partially ordered aligner builder
 ///
 /// Uses consuming builder pattern for constructing partial order alignments with method chaining
-pub struct Aligner<F: MatchFunc, E: Default + AddAssign + Copy> {
+pub struct Aligner<F: MatchFunc, E: Copy, G: EdgeFunc<E>> {
     sequence_names: Vec<String>,
     traceback: Traceback,
     query: Vec<u8>,
-    poa: Poa<F, E>,
+    poa: Poa<F, E, G>,
 }
 
-impl<F: MatchFunc, E: Default + AddAssign + Copy> Aligner<F, E> {
-    pub fn new(scoring: Scoring<F>, reference: TextSlice) -> Self {
+impl<F: MatchFunc, E: Copy, G: EdgeFunc<E>> Aligner<F, E, G> {
+    pub fn new(scoring: Scoring<F>, edgeb: EdgeUpdater<E, G>, reference: TextSlice) -> Self {
         Aligner {
             sequence_names: vec![],
             traceback: Traceback::new(),
             query: reference.to_vec(),
-            poa: Poa::from_string(scoring, reference),
+            poa: Poa::from_string(scoring, edgeb, reference),
         }
     }
 
@@ -274,9 +276,28 @@ impl<F: MatchFunc, E: Default + AddAssign + Copy> Aligner<F, E> {
     }
 }
 
-#[derive(Default)]
-struct Colours {
-    weight: Vec<usize>,
+pub trait EdgeFunc<E> {
+    fn update(&self, lhs: E, rhs: E) -> E;
+}
+
+impl<F, E> EdgeFunc<E> for F
+where
+    F: Fn(E, E) -> E,
+{
+    fn update(&self, lhs: E, rhs: E) -> E {
+        (self)(lhs, rhs)
+    }
+}
+
+pub struct EdgeUpdater<E, F: EdgeFunc<E>> {
+    default: E,
+    update: F,
+}
+
+impl<E: Copy, F: EdgeFunc<E>> EdgeUpdater<E, F> {
+    pub fn new(default: E, update: F) -> Self {
+        EdgeUpdater { default, update }
+    }
 }
 
 /// A partially ordered alignment graph
@@ -284,21 +305,31 @@ struct Colours {
 /// A directed acyclic graph datastructure that represents the topology of a
 /// traceback matrix.
 ///
-pub struct Poa<F: MatchFunc, E: Default + AddAssign + Copy> {
+pub struct Poa<F: MatchFunc, E: Copy, G: EdgeFunc<E>> {
     scoring: Scoring<F>,
+    edgeb: EdgeUpdater<E, G>,
     pub graph: Graph<u8, E, Directed, usize>,
 }
 
-impl<F: MatchFunc, E: Default + AddAssign + Copy> Poa<F, E> {
+impl<F: MatchFunc, E: Copy, G: EdgeFunc<E>> Poa<F, E, G> {
     /// Create a new aligner instance from the directed acyclic graph of another.
     ///
     /// # Arguments
     ///
     /// * `scoring` - the score struct
+    /// * `edgeb` - behaviour of edges on creation and update
     /// * `poa` - the partially ordered reference alignment
     ///
-    pub fn new(scoring: Scoring<F>, graph: Graph<u8, E, Directed, usize>) -> Self {
-        Poa { scoring, graph }
+    pub fn new(
+        scoring: Scoring<F>,
+        edgeb: EdgeUpdater<E, G>,
+        graph: Graph<u8, E, Directed, usize>,
+    ) -> Self {
+        Poa {
+            scoring,
+            edgeb,
+            graph,
+        }
     }
 
     /// Create a new POA graph from an initial reference sequence and alignment penalties.
@@ -308,18 +339,22 @@ impl<F: MatchFunc, E: Default + AddAssign + Copy> Poa<F, E> {
     /// * `scoring` - the score struct
     /// * `reference` - a reference TextSlice to populate the initial reference graph
     ///
-    pub fn from_string(scoring: Scoring<F>, seq: TextSlice) -> Self {
+    pub fn from_string(scoring: Scoring<F>, edgeb: EdgeUpdater<E, G>, seq: TextSlice) -> Self {
         let mut graph: Graph<u8, E, Directed, usize> =
             Graph::with_capacity(seq.len(), seq.len() - 1);
         let mut prev: NodeIndex<usize> = graph.add_node(seq[0]);
         let mut node: NodeIndex<usize>;
         for base in seq.iter().skip(1) {
             node = graph.add_node(*base);
-            graph.add_edge(prev, node, E::default());
+            graph.add_edge(prev, node, edgeb.default);
             prev = node;
         }
 
-        Poa { scoring, graph }
+        Poa {
+            scoring,
+            edgeb,
+            graph,
+        }
     }
 
     /// A global Needleman-Wunsch aligner on partially ordered graphs.
@@ -467,17 +502,18 @@ impl<F: MatchFunc, E: Default + AddAssign + Copy> Poa<F, E> {
                     let node = NodeIndex::new(*p);
                     if (seq[i] != self.graph.raw_nodes()[*p].weight) && (seq[i] != b'X') {
                         let node = self.graph.add_node(seq[i]);
-                        self.graph.add_edge(prev, node, E::default());
+                        self.graph.add_edge(prev, node, self.edgeb.default);
                         prev = node;
                     } else {
                         // update edge weight
                         match self.graph.find_edge(prev, node) {
                             Some(edge) => {
-                                *self.graph.edge_weight_mut(edge).unwrap() += edge_arg;
+                                *self.graph.edge_weight_mut(edge).unwrap() =
+                                    self.edgeb.update.update(self.graph[edge], edge_arg);
                             }
                             None => {
                                 // where the previous node was newly added
-                                self.graph.add_edge(prev, node, E::default());
+                                self.graph.add_edge(prev, node, self.edgeb.default);
                             }
                         }
                         prev = NodeIndex::new(*p);
@@ -489,7 +525,7 @@ impl<F: MatchFunc, E: Default + AddAssign + Copy> Poa<F, E> {
                 }
                 AlignmentOperation::Ins(Some(_)) => {
                     let node = self.graph.add_node(seq[i]);
-                    self.graph.add_edge(prev, node, E::default());
+                    self.graph.add_edge(prev, node, self.edgeb.default);
                     prev = node;
                     i += 1;
                 }
@@ -499,10 +535,13 @@ impl<F: MatchFunc, E: Default + AddAssign + Copy> Poa<F, E> {
     }
 }
 
+//const INC_EDGES: EdgeUpdater<i32, _> = EdgeUpdater { 1, |a: i32, b: i32| a + b };
+//const SCOREM: Scoring<_> = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alignment::pairwise::{MatchParams, Scoring};
+    use alignment::pairwise::Scoring;
     use petgraph::graph::NodeIndex;
 
     #[test]
@@ -510,7 +549,8 @@ mod tests {
         // sanity check for String -> Graph
 
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
-        let poa: Poa<_, i32> = Poa::from_string(scoring, b"123456789");
+        let edgeb = EdgeUpdater::new(1, |a: i32, b: i32| a + b);
+        let poa: Poa<_, i32, _> = Poa::from_string(scoring, edgeb, b"123456789");
         assert!(poa.graph.is_directed());
         assert_eq!(poa.graph.node_count(), 9);
         assert_eq!(poa.graph.edge_count(), 8);
@@ -519,10 +559,12 @@ mod tests {
     #[test]
     fn test_alignment() {
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
+        let edgeb = EdgeUpdater::new(1, |a: i32, b: i32| a + b);
+
         // examples from the POA paper
         //let _seq1 = b"PKMIVRPQKNETV";
         //let _seq2 = b"THKMLVRNETIM";
-        let poa: Poa<_, i32> = Poa::from_string(scoring, b"GATTACA");
+        let poa: Poa<_, i32, _> = Poa::from_string(scoring, edgeb, b"GATTACA");
         let alignment = poa.global(b"GCATGCU").get_alignment();
         assert_eq!(alignment.score, 0);
 
@@ -535,10 +577,11 @@ mod tests {
 
     #[test]
     fn test_branched_alignment() {
+        let edgeb = EdgeUpdater::new(1, |a: i32, b: i32| a + b);
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
         let seq1 = b"TTTTT";
         let seq2 = b"TTATT";
-        let mut poa = Poa::from_string(scoring, seq1);
+        let mut poa = Poa::from_string(scoring, edgeb, seq1);
         let head: NodeIndex<usize> = NodeIndex::new(1);
         let tail: NodeIndex<usize> = NodeIndex::new(2);
         let node1 = poa.graph.add_node(b'A');
@@ -553,10 +596,11 @@ mod tests {
     #[test]
     fn test_alt_branched_alignment() {
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
+        let edgeb = EdgeUpdater::new(1, |a: i32, b: i32| a + b);
 
         let seq1 = b"TTCCTTAA";
         let seq2 = b"TTTTGGAA";
-        let mut poa = Poa::from_string(scoring, seq1);
+        let mut poa = Poa::from_string(scoring, edgeb, seq1);
         let head: NodeIndex<usize> = NodeIndex::new(1);
         let tail: NodeIndex<usize> = NodeIndex::new(2);
         let node1 = poa.graph.add_node(b'A');
@@ -578,11 +622,12 @@ mod tests {
     #[test]
     fn test_insertion_on_branch() {
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
+        let edgeb = EdgeUpdater::new(1, |a: i32, b: i32| a + b);
 
         let seq1 = b"TTCCGGTTTAA";
         let seq2 = b"TTGGTATGGGAA";
         let seq3 = b"TTGGTTTGCGAA";
-        let mut poa = Poa::from_string(scoring, seq1);
+        let mut poa = Poa::from_string(scoring, edgeb, seq1);
         let head: NodeIndex<usize> = NodeIndex::new(1);
         let tail: NodeIndex<usize> = NodeIndex::new(2);
         let node1 = poa.graph.add_node(b'C');
@@ -603,7 +648,9 @@ mod tests {
     #[test]
     fn test_poa_method_chaining() {
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
-        let mut aligner = Aligner::new(scoring, b"TTCCGGTTTAA");
+        let edgeb = EdgeUpdater::new(1, |a: i32, b: i32| a + b);
+
+        let mut aligner = Aligner::new(scoring, edgeb, b"TTCCGGTTTAA");
         aligner
             .global(b"TTGGTATGGGAA")
             .add_to_graph(1)
