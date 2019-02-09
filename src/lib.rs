@@ -113,12 +113,14 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate bv;
+extern crate debruijn;
 extern crate petgraph;
 extern crate statrs;
 extern crate vec_map;
 
 pub mod alignment;
 pub mod alphabets;
+pub mod assembly;
 pub mod data_structures;
 pub mod io;
 pub mod pattern_matching;

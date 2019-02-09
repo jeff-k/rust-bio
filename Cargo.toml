@@ -40,6 +40,7 @@ fxhash = "0.2"
 statrs = "0.9.0"
 bio-types = ">=0.4"
 fnv = "1.0"
+debruijn = { git = "https://github.com/10XGenomics/rust-debruijn" }
 
 [dependencies.vec_map]
 version = "0.8"
