@@ -42,6 +42,11 @@ bio-types = ">=0.4"
 fnv = "1.0"
 debruijn = { git = "https://github.com/10XGenomics/rust-debruijn" }
 
+[dependencies.boomphf]
+git = "https://github.com/10XGenomics/rust-boomphf"
+branch = "master"
+features = ["serde", ]
+
 [dependencies.vec_map]
 version = "0.8"
 features = ["eders"]
