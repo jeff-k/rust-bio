@@ -5,6 +5,7 @@
 
 //! Coloured de Bruijn graph assembly into partially ordered graph
 
+use alignment::pairwise::Scoring;
 use alignment::poa;
 use boomphf::hashmap::BoomHashMap2;
 use debruijn::compression::*;
@@ -34,29 +35,49 @@ lazy_static! {
 }
 
 impl Debruijn {
-    pub fn new(tseq: TextSlice) -> Self {
+    pub fn new(tseq: TextSlice, useq: TextSlice) -> Self {
         // the summarizer defines the criteria for admitting a kmer into the graph
         let summarizer = Box::new(debruijn::filter::CountFilterEqClass::new(1));
-        let seq = DnaString::from_dna_string(str::from_utf8(tseq).unwrap());
         // ...
-        let msps = debruijn::msp::simple_scan::<_, kmer::Kmer6>(32, &seq, &PERM, true);
+
+        let seqs = [
+            DnaString::from_dna_string(str::from_utf8(tseq).unwrap()),
+            DnaString::from_dna_string(str::from_utf8(useq).unwrap()),
+        ];
+        let msps = debruijn::msp::simple_scan::<_, kmer::Kmer6>(32, &seqs[0], &PERM, true);
 
         // ..
-        let mut exts = vec![];
+        //        let mut ext; // = vec![];
+        //        let mut v = [];
+        let mut phf: BoomHashMap2<kmer::Kmer32, Exts, EqClassIdType> = Default::default();
+        //let msps = seq.iter().enumerate().map(|i, seq| { debruijn::msp::simple_scan::<_, kmer>(32, &seq, &PERM, true) }).collect();
         for msp in msps {
-            exts.push(Exts::from_dna_string(&seq, msp.start(), msp.end()));
-        }
+            //            ext = Exts::from_dna_string(&seq, msp.start(), msp.end());
 
-        // apply the summarizer to the hashmap
-        let v = vec![(seq, exts, 0)];
-        let (phf, _): (BoomHashMap2<kmer::Kmer32, Exts, EqClassIdType>, _) =
-            filter_kmers(&v, &summarizer, true, true, 8);
-        // filter_kmers returns (hashmap, Vec(kmer)) tuple
+            // i have no idea what im doing
+            let seqq = DnaString::from_dna_string(str::from_utf8(tseq).unwrap());
+            let seqqq = DnaString::from_dna_string(str::from_utf8(tseq).unwrap());
+            let v = [(
+                seqq,
+                Exts::from_dna_string(&seqqq, msp.start(), msp.end()),
+                0,
+            )];
+            // apply the summarizer to the hashmap
+            let x = filter_kmers(&v, &summarizer, true, true, 8);
+            phf = x.0;
+            //return Debruijn {
+            // compress?
+
+            // filter_kmers returns (hashmap, Vec(kmer)) tuple
+        }
 
         Debruijn {
-            // compress?
             graph: compress_kmers_with_hash(false, ScmapCompress::new(), &phf),
         }
+    }
+
+    pub fn gfa(self, file: String) {
+        self.graph.finish().to_gfa(file);
     }
 
     pub fn push(&self, seq: TextSlice, seqid: u8) {}
@@ -65,11 +86,8 @@ impl Debruijn {
         self.graph.len()
     }
 
-    pub fn to_poa(
-        &self,
-        start: TextSlice,
-        end: TextSlice,
-    ) -> poa::Poa<poa::MatchFunc, i32, poa::EdgeFunc<i32>> {
+    pub fn to_poa(&self, start: TextSlice, end: TextSlice) {
+        // -> poa::Poa<poa::MatchFunc, i32, poa::EdgeFunc<i32>> {
         let mut graph: Graph<u8, i32, Directed, usize> = Graph::with_capacity(10000, 9999);
 
         // traverse the debruijn graph to produce the assembly
@@ -77,13 +95,10 @@ impl Debruijn {
         //       for node in self.graph.iter() {
         //            graph.add_node(petgraph::Node::new(node.to_ascii()));
         //       }
-        let scoring = poa::Scoring::new(-1, 0, |a: u8, b: u8| {
-            if a == b {
-                1i32
-            }
-        });
+        let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
         let labeller = poa::EdgeUpdater::new(1, |a: i32, b: i32| a + b);
-        poa::Poa::new(scoring, labeller, graph)
+        let p = poa::Poa::new(scoring, labeller, graph);
+        p.write_dot("/tmp/poa_out.dot");
     }
 
     pub fn to_gfa(&self) {
@@ -94,10 +109,15 @@ impl Debruijn {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::io::prelude::*;
 
     #[test]
     fn test_init_graph() {
-        let g = Debruijn::new(b"ASDF");
-        assert_eq!(g.len(), 0);
+        let mut fds = File::open("/tmp/hxb2_flat").unwrap();
+        let mut contents = String::new();
+        fds.read_to_string(&mut contents).unwrap();
+        let g = Debruijn::go(contents.as_bytes());
+        assert_eq!(0, 0);
     }
 }
