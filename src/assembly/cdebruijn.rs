@@ -35,48 +35,42 @@ lazy_static! {
 }
 
 impl Debruijn {
-    pub fn new(tseq: TextSlice, useq: TextSlice) -> Self {
+    pub fn new(seq: TextSlice) -> Self {
         // the summarizer defines the criteria for admitting a kmer into the graph
         let summarizer = Box::new(debruijn::filter::CountFilterEqClass::new(1));
         // ...
 
-        let seqs = [
-            DnaString::from_dna_string(str::from_utf8(tseq).unwrap()),
-            DnaString::from_dna_string(str::from_utf8(useq).unwrap()),
-        ];
+        let seqs = [DnaString::from_dna_string(str::from_utf8(seq).unwrap())];
         let msps = debruijn::msp::simple_scan::<_, kmer::Kmer6>(32, &seqs[0], &PERM, true);
 
         // ..
         //        let mut ext; // = vec![];
         //        let mut v = [];
-        let mut phf: BoomHashMap2<kmer::Kmer32, Exts, EqClassIdType> = Default::default();
+
         //let msps = seq.iter().enumerate().map(|i, seq| { debruijn::msp::simple_scan::<_, kmer>(32, &seq, &PERM, true) }).collect();
+        let mut v: Vec<_> = vec![];
         for msp in msps {
             //            ext = Exts::from_dna_string(&seq, msp.start(), msp.end());
 
             // i have no idea what im doing
-            let seqq = DnaString::from_dna_string(str::from_utf8(tseq).unwrap());
-            let seqqq = DnaString::from_dna_string(str::from_utf8(tseq).unwrap());
-            let v = [(
+            let seqq = DnaString::from_dna_string(str::from_utf8(seq).unwrap());
+            let seqqq = DnaString::from_dna_string(str::from_utf8(seq).unwrap());
+            v.push((
                 seqq,
                 Exts::from_dna_string(&seqqq, msp.start(), msp.end()),
                 0,
-            )];
-            // apply the summarizer to the hashmap
-            let x = filter_kmers(&v, &summarizer, true, true, 8);
-            phf = x.0;
-            //return Debruijn {
-            // compress?
-
-            // filter_kmers returns (hashmap, Vec(kmer)) tuple
+            ));
         }
+        // apply the summarizer to the hashmap
+        let x = filter_kmers(&v, &summarizer, true, true, 8);
+        let phf: BoomHashMap2<kmer::Kmer32, Exts, EqClassIdType> = x.0;
 
         Debruijn {
-            graph: compress_kmers_with_hash(false, ScmapCompress::new(), &phf),
+            graph: compress_kmers_with_hash(true, ScmapCompress::new(), &phf),
         }
     }
 
-    pub fn gfa(self, file: String) {
+    pub fn to_gfa(self, file: String) {
         self.graph.finish().to_gfa(file);
     }
 
@@ -100,10 +94,6 @@ impl Debruijn {
         let p = poa::Poa::new(scoring, labeller, graph);
         p.write_dot("/tmp/poa_out.dot");
     }
-
-    pub fn to_gfa(&self) {
-        //self.graph.to_gfa();
-    }
 }
 
 #[cfg(test)]
@@ -117,7 +107,8 @@ mod tests {
         let mut fds = File::open("/tmp/hxb2_flat").unwrap();
         let mut contents = String::new();
         fds.read_to_string(&mut contents).unwrap();
-        let g = Debruijn::go(contents.as_bytes());
+        let g = Debruijn::new(contents.as_bytes());
+        g.to_gfa("/tmp/graph_out".to_string());
         assert_eq!(0, 0);
     }
 }
