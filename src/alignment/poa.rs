@@ -242,14 +242,14 @@ impl Traceback {
 /// A partially ordered aligner builder
 ///
 /// Uses consuming builder pattern for constructing partial order alignments with method chaining
-pub struct Aligner<F: MatchFunc, E: Copy, G: EdgeFunc<E>> {
+pub struct Aligner<F: MatchFunc, E: Copy + ToString, G: EdgeFunc<E>> {
     sequence_names: Vec<String>,
     traceback: Traceback,
     query: Vec<u8>,
     poa: Poa<F, E, G>,
 }
 
-impl<F: MatchFunc, E: Copy, G: EdgeFunc<E>> Aligner<F, E, G> {
+impl<F: MatchFunc, E: Copy + ToString, G: EdgeFunc<E>> Aligner<F, E, G> {
     pub fn new(scoring: Scoring<F>, edgeb: EdgeUpdater<E, G>, reference: TextSlice) -> Self {
         Aligner {
             sequence_names: vec![],
@@ -294,7 +294,7 @@ pub struct EdgeUpdater<E, F: EdgeFunc<E>> {
     update: F,
 }
 
-impl<E: Copy, F: EdgeFunc<E>> EdgeUpdater<E, F> {
+impl<E: Copy + ToString, F: EdgeFunc<E>> EdgeUpdater<E, F> {
     pub fn new(default: E, update: F) -> Self {
         EdgeUpdater { default, update }
     }
@@ -305,13 +305,13 @@ impl<E: Copy, F: EdgeFunc<E>> EdgeUpdater<E, F> {
 /// A directed acyclic graph datastructure that represents the topology of a
 /// traceback matrix.
 ///
-pub struct Poa<F: MatchFunc, E: Copy, G: EdgeFunc<E>> {
+pub struct Poa<F: MatchFunc, E: Copy + ToString, G: EdgeFunc<E>> {
     scoring: Scoring<F>,
     edgeb: EdgeUpdater<E, G>,
     pub graph: Graph<u8, E, Directed, usize>,
 }
 
-impl<F: MatchFunc, E: Copy, G: EdgeFunc<E>> Poa<F, E, G> {
+impl<F: MatchFunc, E: Copy + ToString, G: EdgeFunc<E>> Poa<F, E, G> {
     /// Create a new aligner instance from the directed acyclic graph of another.
     ///
     /// # Arguments
@@ -449,10 +449,10 @@ impl<F: MatchFunc, E: Copy, G: EdgeFunc<E>> Poa<F, E, G> {
             Err(why) => panic!("couldn't open file {}: {}", filename, why.description()),
             Ok(file) => file,
         };
-        let g = self.graph.map(|_, nw| *nw as char, |_, ew| ew);
-        //if let Err(why) = file.write_all(Dot::new(&g).to_string().as_bytes()) {
-        //    panic!("couldn't write to file {}: {}", filename, why.description())
-        //}
+        let g = self.graph.map(|_, nw| *nw as char, |_, ew| ew.to_string());
+        if let Err(why) = file.write_all(Dot::new(&g).to_string().as_bytes()) {
+            panic!("couldn't write to file {}: {}", filename, why.description())
+        }
     }
 
     /// Experimental: return sequence of traversed edges

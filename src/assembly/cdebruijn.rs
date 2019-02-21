@@ -19,7 +19,7 @@ use utils::TextSlice;
 use std::str;
 
 struct Debruijn {
-    graph: BaseGraph<kmer::Kmer32, EqClassIdType>,
+    graph: DebruijnGraph<kmer::Kmer32, EqClassIdType>,
 }
 
 // copy+pasted from rust-pseudoaligner
@@ -35,29 +35,18 @@ lazy_static! {
 }
 
 impl Debruijn {
-    pub fn new(seq: TextSlice) -> Self {
+    pub fn new(tseq: TextSlice) -> Self {
         // the summarizer defines the criteria for admitting a kmer into the graph
         let summarizer = Box::new(debruijn::filter::CountFilterEqClass::new(1));
-        // ...
 
-        let seqs = [DnaString::from_dna_string(str::from_utf8(seq).unwrap())];
-        let msps = debruijn::msp::simple_scan::<_, kmer::Kmer6>(32, &seqs[0], &PERM, true);
+        let seq = DnaString::from_dna_string(str::from_utf8(tseq).unwrap());
+        let msps = debruijn::msp::simple_scan::<_, kmer::Kmer6>(32, &seq, &PERM, true);
 
-        // ..
-        //        let mut ext; // = vec![];
-        //        let mut v = [];
-
-        //let msps = seq.iter().enumerate().map(|i, seq| { debruijn::msp::simple_scan::<_, kmer>(32, &seq, &PERM, true) }).collect();
         let mut v: Vec<_> = vec![];
         for msp in msps {
-            //            ext = Exts::from_dna_string(&seq, msp.start(), msp.end());
-
-            // i have no idea what im doing
-            let seqq = DnaString::from_dna_string(str::from_utf8(seq).unwrap());
-            let seqqq = DnaString::from_dna_string(str::from_utf8(seq).unwrap());
             v.push((
-                seqq,
-                Exts::from_dna_string(&seqqq, msp.start(), msp.end()),
+                DnaString::from_dna_string(str::from_utf8(tseq).unwrap()),
+                Exts::from_dna_string(&seq, msp.start(), msp.end()),
                 0,
             ));
         }
@@ -66,12 +55,12 @@ impl Debruijn {
         let phf: BoomHashMap2<kmer::Kmer32, Exts, EqClassIdType> = x.0;
 
         Debruijn {
-            graph: compress_kmers_with_hash(true, ScmapCompress::new(), &phf),
+            graph: compress_kmers_with_hash(true, ScmapCompress::new(), &phf).finish(),
         }
     }
 
     pub fn to_gfa(self, file: String) {
-        self.graph.finish().to_gfa(file);
+        self.graph.to_gfa(file);
     }
 
     pub fn push(&self, seq: TextSlice, seqid: u8) {}
@@ -81,18 +70,22 @@ impl Debruijn {
     }
 
     pub fn to_poa(&self, start: TextSlice, end: TextSlice) {
-        // -> poa::Poa<poa::MatchFunc, i32, poa::EdgeFunc<i32>> {
-        let mut graph: Graph<u8, i32, Directed, usize> = Graph::with_capacity(10000, 9999);
+        //-> Option(poa::Poa<poa::MatchFunc, i32, poa::EdgeFunc<i32>>) {
+        //let mut graph: Graph<u8, i32, Directed, usize> = Graph::new();
 
-        // traverse the debruijn graph to produce the assembly
-        //filter_kmers
-        //       for node in self.graph.iter() {
-        //            graph.add_node(petgraph::Node::new(node.to_ascii()));
-        //       }
+        // build a partial order from a list of paths that begin and end in the same place
+
+        let path = self.graph.max_path(|_| 1.0, |_| true);
+        let seq = self.graph.sequence_of_path(path.iter());
+
+        println!("best path: {:?}", &seq.to_ascii_vec());
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
         let labeller = poa::EdgeUpdater::new(1, |a: i32, b: i32| a + b);
-        let p = poa::Poa::new(scoring, labeller, graph);
+        let p: poa::Poa<_, i32, _> = poa::Poa::from_string(scoring, labeller, &seq.to_ascii_vec());
+
         p.write_dot("/tmp/poa_out.dot");
+
+        //poa
     }
 }
 
@@ -109,6 +102,16 @@ mod tests {
         fds.read_to_string(&mut contents).unwrap();
         let g = Debruijn::new(contents.as_bytes());
         g.to_gfa("/tmp/graph_out".to_string());
+        assert_eq!(0, 0);
+    }
+
+    #[test]
+    fn test_to_poa() {
+        let mut fds = File::open("/tmp/hxb2_flat").unwrap();
+        let mut contents = String::new();
+        fds.read_to_string(&mut contents).unwrap();
+        let g = Debruijn::new(contents.as_bytes());
+        g.to_poa(b"", b"");
         assert_eq!(0, 0);
     }
 }
