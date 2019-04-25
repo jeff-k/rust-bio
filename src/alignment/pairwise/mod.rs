@@ -98,6 +98,7 @@
 //! ```
 
 use std::cmp::max;
+use std::fmt::Display;
 use std::i32;
 use std::iter::repeat;
 
@@ -111,9 +112,31 @@ pub mod banded;
 /// adding two negative infinities. Use ~ 0.4 * i32::MIN
 pub const MIN_SCORE: i32 = -858_993_459;
 
+pub trait Semiring: Copy + Clone + Display + Ord {
+    fn add(self, rhs: Self) -> Self;
+    fn mul(self, rhs: Self) -> Self;
+    fn one() -> Self;
+    fn zero() -> Self;
+}
+
+impl Semiring for i32 {
+    fn mul(self, rhs: i32) -> i32 {
+        self + rhs
+    }
+    fn add(self, rhs: i32) -> i32 {
+        max(self, rhs)
+    }
+    fn zero() -> i32 {
+        MIN_SCORE
+    }
+    fn one() -> i32 {
+        0i32
+    }
+}
+
 /// Trait required to instantiate a Scoring instance
-pub trait MatchFunc {
-    fn score(&self, a: u8, b: u8) -> i32;
+pub trait MatchFunc<S: Semiring> {
+    fn score(&self, a: u8, b: u8) -> S;
 }
 
 /// A concrete data structure which implements trait MatchFunc with constant
@@ -142,7 +165,7 @@ impl MatchParams {
     }
 }
 
-impl MatchFunc for MatchParams {
+impl MatchFunc<i32> for MatchParams {
     #[inline]
     fn score(&self, a: u8, b: u8) -> i32 {
         if a == b {
@@ -155,11 +178,11 @@ impl MatchFunc for MatchParams {
 
 /// The trait Matchfunc is also implemented for Fn(u8, u8) -> i32 so that Scoring
 /// can be instantiated using closures and custom user defined functions
-impl<F> MatchFunc for F
+impl<S: Semiring, F> MatchFunc<S> for F
 where
-    F: Fn(u8, u8) -> i32,
+    F: Fn(u8, u8) -> S,
 {
-    fn score(&self, a: u8, b: u8) -> i32 {
+    fn score(&self, a: u8, b: u8) -> S {
         (self)(a, b)
     }
 }
@@ -168,18 +191,18 @@ where
 /// An affine gap score model is used so that the gap score for a length 'k' is:
 /// GapScore(k) = gap_open + gap_extend * k
 #[derive(Debug, Clone)]
-pub struct Scoring<F: MatchFunc> {
-    pub gap_open: i32,
-    pub gap_extend: i32,
+pub struct Scoring<S: Semiring, F: MatchFunc<S>> {
+    pub gap_open: S,
+    pub gap_extend: S,
     pub match_fn: F,
-    pub match_scores: Option<(i32, i32)>,
-    pub xclip_prefix: i32,
-    pub xclip_suffix: i32,
-    pub yclip_prefix: i32,
-    pub yclip_suffix: i32,
+    pub match_scores: Option<(S, S)>,
+    pub xclip_prefix: S,
+    pub xclip_suffix: S,
+    pub yclip_prefix: S,
+    pub yclip_suffix: S,
 }
 
-impl Scoring<MatchParams> {
+impl Scoring<i32, MatchParams> {
     /// Create new Scoring instance with given gap open, gap extend penalties
     /// match and mismatch scores. The clip penalties are set to MIN_SCORE by default
     ///
@@ -212,7 +235,7 @@ impl Scoring<MatchParams> {
     }
 }
 
-impl<F: MatchFunc> Scoring<F> {
+impl<F: MatchFunc<i32>> Scoring<i32, F> {
     /// Create new Scoring instance with given gap open, gap extend penalties
     /// and the score function. The clip penalties are set to MIN_SCORE by default
     ///
@@ -311,7 +334,7 @@ impl<F: MatchFunc> Scoring<F> {
 /// traceback - see bio::alignment::pairwise::Traceback
 /// scoring - see bio::alignment::pairwise::Scoring
 #[allow(non_snake_case)]
-pub struct Aligner<F: MatchFunc> {
+pub struct Aligner<F: MatchFunc<i32>> {
     I: [Vec<i32>; 2],
     D: [Vec<i32>; 2],
     S: [Vec<i32>; 2],
@@ -319,12 +342,12 @@ pub struct Aligner<F: MatchFunc> {
     Ly: Vec<usize>,
     Sn: Vec<i32>,
     traceback: Traceback,
-    scoring: Scoring<F>,
+    scoring: Scoring<i32, F>,
 }
 
 const DEFAULT_ALIGNER_CAPACITY: usize = 200;
 
-impl<F: MatchFunc> Aligner<F> {
+impl<F: MatchFunc<i32>> Aligner<F> {
     /// Create new aligner instance with given gap open and gap extend penalties
     /// and the score function.
     ///
@@ -377,7 +400,7 @@ impl<F: MatchFunc> Aligner<F> {
     ///
     /// * `scoring` - the scoring struct (see bio::alignment::pairwise::Scoring)
     ///
-    pub fn with_scoring(scoring: Scoring<F>) -> Self {
+    pub fn with_scoring(scoring: Scoring<i32, F>) -> Self {
         Aligner::with_capacity_and_scoring(
             DEFAULT_ALIGNER_CAPACITY,
             DEFAULT_ALIGNER_CAPACITY,
@@ -394,7 +417,7 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `n` - the expected size of y
     /// * `scoring` - the scoring struct
     ///
-    pub fn with_capacity_and_scoring(m: usize, n: usize, scoring: Scoring<F>) -> Self {
+    pub fn with_capacity_and_scoring(m: usize, n: usize, scoring: Scoring<i32, F>) -> Self {
         assert!(scoring.gap_open <= 0, "gap_open can't be positive");
         assert!(scoring.gap_extend <= 0, "gap_extend can't be positive");
         assert!(

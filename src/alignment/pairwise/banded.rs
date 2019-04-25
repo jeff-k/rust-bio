@@ -109,7 +109,7 @@ const DEFAULT_MATCH_SCORE: i32 = 2;
 /// in the band is less than MAX_CELLS (currently set to 10 million), otherwise it returns an
 /// empty alignment
 #[allow(non_snake_case)]
-pub struct Aligner<F: MatchFunc> {
+pub struct Aligner<F: MatchFunc<i32>> {
     S: [Vec<i32>; 2],
     I: [Vec<i32>; 2],
     D: [Vec<i32>; 2],
@@ -117,7 +117,7 @@ pub struct Aligner<F: MatchFunc> {
     Ly: Vec<usize>,
     Sn: Vec<i32>,
     traceback: Traceback,
-    scoring: Scoring<F>,
+    scoring: Scoring<i32, F>,
 
     band: Band,
     k: usize,
@@ -126,7 +126,7 @@ pub struct Aligner<F: MatchFunc> {
 
 const DEFAULT_ALIGNER_CAPACITY: usize = 200;
 
-impl<F: MatchFunc> Aligner<F> {
+impl<F: MatchFunc<i32>> Aligner<F> {
     /// Create new aligner instance with given gap open and gap extend penalties
     /// and the score function.
     ///
@@ -201,7 +201,7 @@ impl<F: MatchFunc> Aligner<F> {
     pub fn with_capacity_and_scoring(
         m: usize,
         n: usize,
-        scoring: Scoring<F>,
+        scoring: Scoring<i32, F>,
         k: usize,
         w: usize,
     ) -> Self {
@@ -250,7 +250,7 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `k` - kmer length used in constructing the band
     /// * `w` - width of the band
     ///
-    pub fn with_scoring(scoring: Scoring<F>, k: usize, w: usize) -> Self {
+    pub fn with_scoring(scoring: Scoring<i32, F>, k: usize, w: usize) -> Self {
         Aligner::with_capacity_and_scoring(
             DEFAULT_ALIGNER_CAPACITY,
             DEFAULT_ALIGNER_CAPACITY,
@@ -1053,13 +1053,13 @@ impl Band {
     // start - the index of the first matching kmer in LCSk++
     // end - the index of the last matching kmer in LCSk++
     //
-    fn set_boundaries<F: MatchFunc>(
+    fn set_boundaries<F: MatchFunc<i32>>(
         &mut self,
         start: (u32, u32),
         end: (u32, u32),
         k: usize,
         w: usize,
-        scoring: &Scoring<F>,
+        scoring: &Scoring<i32, F>,
     ) {
         let lazy_extend: usize = 2 * k;
 
@@ -1187,35 +1187,35 @@ impl Band {
         }
     }
 
-    fn create<F: MatchFunc>(
+    fn create<F: MatchFunc<i32>>(
         x: TextSlice<'_>,
         y: TextSlice<'_>,
         k: usize,
         w: usize,
-        scoring: &Scoring<F>,
+        scoring: &Scoring<i32, F>,
     ) -> Band {
         let matches = sparse::find_kmer_matches(x, y, k);
         Band::create_with_matches(x, y, k, w, scoring, &matches)
     }
 
-    fn create_with_prehash<F: MatchFunc>(
+    fn create_with_prehash<F: MatchFunc<i32>>(
         x: TextSlice<'_>,
         y: TextSlice<'_>,
         k: usize,
         w: usize,
-        scoring: &Scoring<F>,
+        scoring: &Scoring<i32, F>,
         y_kmer_hash: &HashMapFx<&[u8], Vec<u32>>,
     ) -> Band {
         let matches = sparse::find_kmer_matches_seq2_hashed(x, y_kmer_hash, k);
         Band::create_with_matches(x, y, k, w, scoring, &matches)
     }
 
-    fn create_with_matches<F: MatchFunc>(
+    fn create_with_matches<F: MatchFunc<i32>>(
         x: TextSlice<'_>,
         y: TextSlice<'_>,
         k: usize,
         w: usize,
-        scoring: &Scoring<F>,
+        scoring: &Scoring<i32, F>,
         matches: &[(u32, u32)],
     ) -> Band {
         if matches.is_empty() {
@@ -1239,12 +1239,12 @@ impl Band {
         Band::create_from_match_path(x, y, k, w, scoring, &res.path, &matches)
     }
 
-    fn create_from_match_path<F: MatchFunc>(
+    fn create_from_match_path<F: MatchFunc<i32>>(
         x: TextSlice<'_>,
         y: TextSlice<'_>,
         k: usize,
         w: usize,
-        scoring: &Scoring<F>,
+        scoring: &Scoring<i32, F>,
         path: &[usize],
         matches: &[(u32, u32)],
     ) -> Band {

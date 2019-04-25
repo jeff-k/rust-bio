@@ -35,10 +35,11 @@
 //!
 
 use std::cmp::{max, Ordering};
+use std::fmt::Display;
 
 use crate::utils::TextSlice;
 
-use crate::alignment::pairwise::{MatchFunc, Scoring};
+use crate::alignment::pairwise::{MatchFunc, Scoring, Semiring};
 use crate::alignment::AlignmentMode;
 
 use petgraph::graph::NodeIndex;
@@ -46,25 +47,10 @@ use petgraph::visit::Topo;
 
 use petgraph::{Directed, Graph, Incoming};
 
-pub const MIN_SCORE: i32 = -858_993_459; // negative infinity; see alignment/pairwise/mod.rs
 pub type POAGraph = Graph<u8, i32, Directed, usize>;
 
 pub struct Colours {
     colours: Vec<i32>,
-}
-
-pub trait Semiring {
-    fn add(&self, rhs: &Self) -> Self;
-    fn mul(&self, rhs: &Self) -> Self;
-    fn one() -> Self;
-    fn zero() -> Self;
-}
-
-impl Semiring for i32 {
-    fn mul(self, other) { self + other; }
-    fn add(self, other) { max(self, other); }
-    fn zero() { MIN_SCORE; }
-    fn one() { 0i32; }
 }
 
 // Unlike with a total order we may have arbitrary successors in the
@@ -93,9 +79,25 @@ pub struct TracebackCell<S: Semiring> {
 
 //impl Default for TracebackCell { }
 
-impl Eq for TracebackCell {}
+//impl Eq for TracebackCell {}
 
-pub struct Traceback<S: Semiring> {
+fn argmax2<S: Semiring>(t1: TracebackCell<S>, t2: TracebackCell<S>) -> TracebackCell<S> {
+    if t1.score > t2.score {
+        t1
+    } else {
+        t2
+    }
+}
+
+fn argmax3<S: Semiring>(
+    t1: TracebackCell<S>,
+    t2: TracebackCell<S>,
+    t3: TracebackCell<S>,
+) -> TracebackCell<S> {
+    argmax2(argmax2(t1, t2), t3)
+}
+
+pub struct Traceback<S: Semiring + Copy + Clone + Display> {
     rows: usize,
     cols: usize,
 
@@ -105,7 +107,7 @@ pub struct Traceback<S: Semiring> {
     matrix: Vec<Vec<TracebackCell<S>>>,
 }
 
-impl Traceback<S: Semiring> {
+impl<S: Semiring + Copy + Clone + Display> Traceback<S> {
     /// Create a Traceback matrix with given maximum sizes
     ///
     /// # Arguments
@@ -116,8 +118,8 @@ impl Traceback<S: Semiring> {
     fn with_capacity(m: usize, n: usize) -> Self {
         let matrix = vec![
             vec![
-                TracebackCell<S> {
-                    score: S::zero(),
+                TracebackCell::<S> {
+                    score: S::one(),
                     op: AlignmentOperation::Match(None)
                 };
                 n + 1
@@ -141,7 +143,7 @@ impl Traceback<S: Semiring> {
             .take(self.rows + 1)
             .skip(1)
         {
-            // TODO: pass a callback to customize clipping penalties 
+            // TODO: pass a callback to customize clipping penalties
             row[0] = TracebackCell {
                 score: S::one().mul(gap_open), // gap_open penalty
                 op: AlignmentOperation::Del(None),
@@ -164,11 +166,11 @@ impl Traceback<S: Semiring> {
         }
     }
 
-    fn set(&mut self, i: usize, j: usize, cell: TracebackCell) {
+    fn set(&mut self, i: usize, j: usize, cell: TracebackCell<S>) {
         self.matrix[i][j] = cell;
     }
 
-    fn get(&self, i: usize, j: usize) -> &TracebackCell {
+    fn get(&self, i: usize, j: usize) -> &TracebackCell<S> {
         &self.matrix[i][j]
     }
 
@@ -187,7 +189,7 @@ impl Traceback<S: Semiring> {
         println!();
     }
 
-    pub fn alignment(&self) -> Alignment {
+    pub fn alignment(&self) -> Alignment<S> {
         // optimal AlignmentOperation path
         let mut ops: Vec<AlignmentOperation> = vec![];
 
@@ -236,19 +238,19 @@ impl Traceback<S: Semiring> {
 /// A partially ordered aligner builder
 ///
 /// Uses consuming builder pattern for constructing partial order alignments with method chaining
-pub struct Aligner<F: MatchFunc, S: Semiring> {
+pub struct Aligner<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> {
     sequence_names: Vec<String>,
     traceback: Traceback<S>,
     query: Vec<u8>,
-    poa: Poa<F>,
+    poa: Poa<S, F>,
 }
 
-impl<F: MatchFunc, S: Semiring> Aligner<F, S> {
+impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Aligner<S, F> {
     /// Create new instance.
-    pub fn new(scoring: Scoring<F>, reference: TextSlice) -> Self {
+    pub fn new(scoring: Scoring<S, F>, reference: TextSlice) -> Self {
         Aligner {
             sequence_names: vec![],
-            traceback: Traceback<S>::new(),
+            traceback: Traceback::<S>::new(),
             query: reference.to_vec(),
             poa: Poa::from_string(scoring, reference),
         }
@@ -262,7 +264,7 @@ impl<F: MatchFunc, S: Semiring> Aligner<F, S> {
     }
 
     /// Return alignment of last added query against the graph.
-    pub fn alignment(&self) -> Alignment {
+    pub fn alignment(&self) -> Alignment<S> {
         self.traceback.alignment()
     }
 
@@ -284,12 +286,12 @@ impl<F: MatchFunc, S: Semiring> Aligner<F, S> {
 /// A directed acyclic graph datastructure that represents the topology of a
 /// traceback matrix.
 ///
-pub struct Poa<F: MatchFunc> {
-    scoring: Scoring<F>,
+pub struct Poa<S: Semiring, F: MatchFunc<S>> {
+    scoring: Scoring<S, F>,
     pub graph: POAGraph,
 }
 
-impl<F: MatchFunc> Poa<F> {
+impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
     /// Create a new aligner instance from the directed acyclic graph of another.
     ///
     /// # Arguments
@@ -297,7 +299,7 @@ impl<F: MatchFunc> Poa<F> {
     /// * `scoring` - the score struct
     /// * `poa` - the partially ordered reference alignment
     ///
-    pub fn new(scoring: Scoring<F>, graph: POAGraph) -> Self {
+    pub fn new(scoring: Scoring<S, F>, graph: POAGraph) -> Self {
         Poa { scoring, graph }
     }
 
@@ -308,7 +310,7 @@ impl<F: MatchFunc> Poa<F> {
     /// * `scoring` - the score struct
     /// * `reference` - a reference TextSlice to populate the initial reference graph
     ///
-    pub fn from_string(scoring: Scoring<F>, seq: TextSlice) -> Self {
+    pub fn from_string(scoring: Scoring<S, F>, seq: TextSlice) -> Self {
         let mut graph: Graph<u8, i32, Directed, usize> =
             Graph::with_capacity(seq.len(), seq.len() - 1);
         let mut prev: NodeIndex<usize> = graph.add_node(seq[0]);
@@ -360,7 +362,10 @@ impl<F: MatchFunc> Poa<F> {
                 // match and deletion scores for the first reference base
                 let max_cell = if prevs.is_empty() {
                     TracebackCell {
-                        score: traceback.get(0, j - 1).score.mul(self.scoring.match_fn.score(r, *q)),
+                        score: traceback
+                            .get(0, j - 1)
+                            .score
+                            .mul(self.scoring.match_fn.score(r, *q)),
                         op: AlignmentOperation::Match(None),
                     }
                 } else {
@@ -370,10 +375,13 @@ impl<F: MatchFunc> Poa<F> {
                     };
                     for prev_node in &prevs {
                         let i_p: usize = prev_node.index() + 1; // index of previous node
-                        max_cell = argmax( 
+                        max_cell = argmax3(
                             max_cell,
                             TracebackCell {
-                                score: traceback.get(i_p, j - 1).score.mul(self.scoring.match_fn.score(r, *q)),
+                                score: traceback
+                                    .get(i_p, j - 1)
+                                    .score
+                                    .mul(self.scoring.match_fn.score(r, *q)),
                                 op: AlignmentOperation::Match(Some((i_p - 1, i - 1))),
                             },
                             TracebackCell {
@@ -385,7 +393,8 @@ impl<F: MatchFunc> Poa<F> {
                     max_cell
                 };
 
-                let score = argmax(max_cell,
+                let score = argmax2(
+                    max_cell,
                     TracebackCell {
                         score: traceback.get(i, j - 1).score.mul(self.scoring.gap_open),
                         op: AlignmentOperation::Ins(Some(i - 1)),
@@ -402,7 +411,7 @@ impl<F: MatchFunc> Poa<F> {
     ///
     /// Only supports alignments for sequences that have already been added,
     /// so all operations must be Match.
-    pub fn edges(&self, aln: Alignment) -> Vec<usize> {
+    pub fn edges(&self, aln: Alignment<S>) -> Vec<usize> {
         let mut path: Vec<usize> = vec![];
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
         let mut _i: usize = 0;
@@ -433,7 +442,7 @@ impl<F: MatchFunc> Poa<F> {
     /// * `aln` - The alignment of the new sequence to the graph
     /// * `seq` - The sequence being incorporated
     ///
-    pub fn add_alignment(&mut self, aln: &Alignment, seq: TextSlice) {
+    pub fn add_alignment(&mut self, aln: &Alignment<S>, seq: TextSlice) {
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
         let mut i: usize = 0;
         for op in aln.operations.iter() {
