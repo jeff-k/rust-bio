@@ -49,6 +49,24 @@ use petgraph::{Directed, Graph, Incoming};
 pub const MIN_SCORE: i32 = -858_993_459; // negative infinity; see alignment/pairwise/mod.rs
 pub type POAGraph = Graph<u8, i32, Directed, usize>;
 
+pub struct Colours {
+    colours: Vec<i32>,
+}
+
+pub trait Semiring {
+    fn add(&self, rhs: &Self) -> Self;
+    fn mul(&self, rhs: &Self) -> Self;
+    fn one() -> Self;
+    fn zero() -> Self;
+}
+
+impl Semiring for i32 {
+    fn mul(self, other) { self + other; }
+    fn add(self, other) { max(self, other); }
+    fn zero() { MIN_SCORE; }
+    fn one() { 0i32; }
+}
+
 // Unlike with a total order we may have arbitrary successors in the
 // traceback matrix. I have not yet figured out what the best level of
 // detail to store is, so Match and Del operations remember In and Out
@@ -60,52 +78,34 @@ pub enum AlignmentOperation {
     Ins(Option<usize>),
 }
 
-pub struct Alignment {
-    pub score: i32,
+pub struct Alignment<S: Semiring> {
+    pub score: S,
     //    xstart: Edge,
     operations: Vec<AlignmentOperation>,
     mode: AlignmentMode,
 }
 
 #[derive(Debug, Clone)]
-pub struct TracebackCell {
-    score: i32,
+pub struct TracebackCell<S: Semiring> {
+    score: S,
     op: AlignmentOperation,
-}
-
-impl Ord for TracebackCell {
-    fn cmp(&self, other: &TracebackCell) -> Ordering {
-        self.score.cmp(&other.score)
-    }
-}
-
-impl PartialOrd for TracebackCell {
-    fn partial_cmp(&self, other: &TracebackCell) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for TracebackCell {
-    fn eq(&self, other: &TracebackCell) -> bool {
-        self.score == other.score
-    }
 }
 
 //impl Default for TracebackCell { }
 
 impl Eq for TracebackCell {}
 
-pub struct Traceback {
+pub struct Traceback<S: Semiring> {
     rows: usize,
     cols: usize,
 
     // store the last visited node in topological order so that
     // we can index into the end of the alignment when we backtrack
     last: NodeIndex<usize>,
-    matrix: Vec<Vec<TracebackCell>>,
+    matrix: Vec<Vec<TracebackCell<S>>>,
 }
 
-impl Traceback {
+impl Traceback<S: Semiring> {
     /// Create a Traceback matrix with given maximum sizes
     ///
     /// # Arguments
@@ -116,8 +116,8 @@ impl Traceback {
     fn with_capacity(m: usize, n: usize) -> Self {
         let matrix = vec![
             vec![
-                TracebackCell {
-                    score: 0,
+                TracebackCell<S> {
+                    score: S::zero(),
                     op: AlignmentOperation::Match(None)
                 };
                 n + 1
@@ -133,7 +133,7 @@ impl Traceback {
     }
 
     /// Populate the edges of the traceback matrix
-    fn initialize_scores(&mut self, gap_open: i32) {
+    fn initialize_scores(&mut self, gap_open: S) {
         for (i, row) in self
             .matrix
             .iter_mut()
@@ -141,15 +141,15 @@ impl Traceback {
             .take(self.rows + 1)
             .skip(1)
         {
-            // TODO: these should be -1 * distance from head node
+            // TODO: pass a callback to customize clipping penalties 
             row[0] = TracebackCell {
-                score: (i as i32) * gap_open, // gap_open penalty
+                score: S::one().mul(gap_open), // gap_open penalty
                 op: AlignmentOperation::Del(None),
             };
         }
         for j in 1..=self.cols {
             self.matrix[0][j] = TracebackCell {
-                score: (j as i32) * gap_open,
+                score: S::one().mul(gap_open),
                 op: AlignmentOperation::Ins(None),
             };
         }
@@ -236,19 +236,19 @@ impl Traceback {
 /// A partially ordered aligner builder
 ///
 /// Uses consuming builder pattern for constructing partial order alignments with method chaining
-pub struct Aligner<F: MatchFunc> {
+pub struct Aligner<F: MatchFunc, S: Semiring> {
     sequence_names: Vec<String>,
-    traceback: Traceback,
+    traceback: Traceback<S>,
     query: Vec<u8>,
     poa: Poa<F>,
 }
 
-impl<F: MatchFunc> Aligner<F> {
+impl<F: MatchFunc, S: Semiring> Aligner<F, S> {
     /// Create new instance.
     pub fn new(scoring: Scoring<F>, reference: TextSlice) -> Self {
         Aligner {
             sequence_names: vec![],
-            traceback: Traceback::new(),
+            traceback: Traceback<S>::new(),
             query: reference.to_vec(),
             poa: Poa::from_string(scoring, reference),
         }
@@ -327,7 +327,7 @@ impl<F: MatchFunc> Poa<F> {
     /// # Arguments
     /// * `query` - the query TextSlice to align against the internal graph member
     ///
-    pub fn global(&self, query: TextSlice) -> Traceback {
+    pub fn global(&self, query: TextSlice) -> Traceback<S> {
         assert!(self.graph.node_count() != 0);
 
         // dimensions of the traceback matrix
@@ -339,7 +339,7 @@ impl<F: MatchFunc> Poa<F> {
             0,
             0,
             TracebackCell {
-                score: 0,
+                score: S::one(),
                 op: AlignmentOperation::Match(None),
             },
         );
@@ -360,38 +360,34 @@ impl<F: MatchFunc> Poa<F> {
                 // match and deletion scores for the first reference base
                 let max_cell = if prevs.is_empty() {
                     TracebackCell {
-                        score: traceback.get(0, j - 1).score + self.scoring.match_fn.score(r, *q),
+                        score: traceback.get(0, j - 1).score.mul(self.scoring.match_fn.score(r, *q)),
                         op: AlignmentOperation::Match(None),
                     }
                 } else {
                     let mut max_cell = TracebackCell {
-                        score: MIN_SCORE,
+                        score: S::zero(),
                         op: AlignmentOperation::Match(None),
                     };
                     for prev_node in &prevs {
                         let i_p: usize = prev_node.index() + 1; // index of previous node
-                        max_cell = max(
+                        max_cell = argmax( 
                             max_cell,
-                            max(
-                                TracebackCell {
-                                    score: traceback.get(i_p, j - 1).score
-                                        + self.scoring.match_fn.score(r, *q),
-                                    op: AlignmentOperation::Match(Some((i_p - 1, i - 1))),
-                                },
-                                TracebackCell {
-                                    score: traceback.get(i_p, j).score + self.scoring.gap_open,
-                                    op: AlignmentOperation::Del(Some((i_p - 1, i))),
-                                },
-                            ),
+                            TracebackCell {
+                                score: traceback.get(i_p, j - 1).score.mul(self.scoring.match_fn.score(r, *q)),
+                                op: AlignmentOperation::Match(Some((i_p - 1, i - 1))),
+                            },
+                            TracebackCell {
+                                score: traceback.get(i_p, j).score.mul(self.scoring.gap_open),
+                                op: AlignmentOperation::Del(Some((i_p - 1, i))),
+                            },
                         );
                     }
                     max_cell
                 };
 
-                let score = max(
-                    max_cell,
+                let score = argmax(max_cell,
                     TracebackCell {
-                        score: traceback.get(i, j - 1).score + self.scoring.gap_open,
+                        score: traceback.get(i, j - 1).score.mul(self.scoring.gap_open),
                         op: AlignmentOperation::Ins(Some(i - 1)),
                     },
                 );
