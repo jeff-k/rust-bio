@@ -142,12 +142,12 @@ pub trait MatchFunc<S: Semiring> {
 /// A concrete data structure which implements trait MatchFunc with constant
 /// match and mismatch scores
 #[derive(Debug, Clone)]
-pub struct MatchParams {
-    pub match_score: i32,
-    pub mismatch_score: i32,
+pub struct MatchParams<S: Semiring> {
+    pub match_score: S,
+    pub mismatch_score: S,
 }
 
-impl MatchParams {
+impl<S: Semiring> MatchParams<S> {
     /// Create new MatchParams instance with given match and mismatch scores
     ///
     /// # Arguments
@@ -155,9 +155,9 @@ impl MatchParams {
     /// * `match_score` - the score for a match (should not be negative)
     /// * `mismatch_score` - the score for a mismatch (should not be positive)
     ///
-    pub fn new(match_score: i32, mismatch_score: i32) -> Self {
-        assert!(match_score >= 0, "match_score can't be negative");
-        assert!(mismatch_score <= 0, "mismatch_score can't be positive");
+    pub fn new(match_score: S, mismatch_score: S) -> Self {
+        //assert!(match_score >= 0, "match_score can't be negative");
+        //assert!(mismatch_score <= 0, "mismatch_score can't be positive");
         MatchParams {
             match_score,
             mismatch_score,
@@ -165,9 +165,9 @@ impl MatchParams {
     }
 }
 
-impl MatchFunc<i32> for MatchParams {
+impl<S: Semiring> MatchFunc<S> for MatchParams<S> {
     #[inline]
-    fn score(&self, a: u8, b: u8) -> i32 {
+    fn score(&self, a: u8, b: u8) -> S {
         if a == b {
             self.match_score
         } else {
@@ -202,7 +202,7 @@ pub struct Scoring<S: Semiring, F: MatchFunc<S>> {
     pub yclip_suffix: S,
 }
 
-impl Scoring<i32, MatchParams> {
+impl<S: Semiring> Scoring<S, MatchParams<S>> {
     /// Create new Scoring instance with given gap open, gap extend penalties
     /// match and mismatch scores. The clip penalties are set to MIN_SCORE by default
     ///
@@ -213,29 +213,24 @@ impl Scoring<i32, MatchParams> {
     /// * `match_score` - the score for a match
     /// * `mismatch_score` - the score for a mismatch
     ///
-    pub fn from_scores(
-        gap_open: i32,
-        gap_extend: i32,
-        match_score: i32,
-        mismatch_score: i32,
-    ) -> Self {
-        assert!(gap_open <= 0, "gap_open can't be positive");
-        assert!(gap_extend <= 0, "gap_extend can't be positive");
+    pub fn from_scores(gap_open: S, gap_extend: S, match_score: S, mismatch_score: S) -> Self {
+        //assert!(gap_open <= 0, "gap_open can't be positive");
+        //assert!(gap_extend <= 0, "gap_extend can't be positive");
 
         Scoring {
             gap_open,
             gap_extend,
             match_fn: MatchParams::new(match_score, mismatch_score),
             match_scores: Some((match_score, mismatch_score)),
-            xclip_prefix: MIN_SCORE,
-            xclip_suffix: MIN_SCORE,
-            yclip_prefix: MIN_SCORE,
-            yclip_suffix: MIN_SCORE,
+            xclip_prefix: S::zero(),
+            xclip_suffix: S::zero(),
+            yclip_prefix: S::zero(),
+            yclip_suffix: S::zero(),
         }
     }
 }
 
-impl<F: MatchFunc<i32>> Scoring<i32, F> {
+impl<S: Semiring, F: MatchFunc<S>> Scoring<S, F> {
     /// Create new Scoring instance with given gap open, gap extend penalties
     /// and the score function. The clip penalties are set to MIN_SCORE by default
     ///
@@ -245,19 +240,19 @@ impl<F: MatchFunc<i32>> Scoring<i32, F> {
     /// * `gap_extend` - the score for extending a gap (should not be positive)
     /// * `match_fn` - function that returns the score for substitutions (also see bio::scores)
     ///
-    pub fn new(gap_open: i32, gap_extend: i32, match_fn: F) -> Self {
-        assert!(gap_open <= 0, "gap_open can't be positive");
-        assert!(gap_extend <= 0, "gap_extend can't be positive");
+    pub fn new(gap_open: S, gap_extend: S, match_fn: F) -> Self {
+        //assert!(gap_open <= 0, "gap_open can't be positive");
+        //assert!(gap_extend <= 0, "gap_extend can't be positive");
 
         Scoring {
             gap_open,
             gap_extend,
             match_fn,
             match_scores: None,
-            xclip_prefix: MIN_SCORE,
-            xclip_suffix: MIN_SCORE,
-            yclip_prefix: MIN_SCORE,
-            yclip_suffix: MIN_SCORE,
+            xclip_prefix: S::zero(),
+            xclip_suffix: S::zero(),
+            yclip_prefix: S::zero(),
+            yclip_suffix: S::zero(),
         }
     }
 
@@ -267,8 +262,8 @@ impl<F: MatchFunc<i32>> Scoring<i32, F> {
     ///
     /// * `penalty` - Clipping penalty for x (both prefix and suffix, should not be positive)
     ///
-    pub fn xclip(self, penalty: i32) -> Self {
-        assert!(penalty <= 0, "Clipping penalty can't be positive");
+    pub fn xclip(self, penalty: S) -> Self {
+        //assert!(penalty <= 0, "Clipping penalty can't be positive");
         Scoring {
             gap_open: self.gap_open,
             gap_extend: self.gap_extend,
@@ -287,8 +282,8 @@ impl<F: MatchFunc<i32>> Scoring<i32, F> {
     ///
     /// * `penalty` - Clipping penalty for y (both prefix and suffix, should not be positive)
     ///
-    pub fn yclip(self, penalty: i32) -> Self {
-        assert!(penalty <= 0, "Clipping penalty can't be positive");
+    pub fn yclip(self, penalty: S) -> Self {
+        //assert!(penalty <= 0, "Clipping penalty can't be positive");
         Scoring {
             gap_open: self.gap_open,
             gap_extend: self.gap_extend,
