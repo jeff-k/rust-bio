@@ -25,10 +25,10 @@
 //! let z = b"AABCBAA";
 //!
 //! let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
-//! let mut aligner = Aligner::new(scoring, x);
+//! let mut aligner = Aligner::new(scoring, x, 1i32);
 //! // z differs from x in 3 locations
 //! assert_eq!(aligner.global(z).alignment().score, 1);
-//! aligner.global(y).add_to_graph();
+//! aligner.global(y).add_to_graph(1i32);
 //! // z differs from x and y's partial order alignment by 1 base
 //! assert_eq!(aligner.global(z).alignment().score, 5);
 //! ```
@@ -47,11 +47,7 @@ use petgraph::visit::Topo;
 
 use petgraph::{Directed, Graph, Incoming};
 
-pub type POAGraph = Graph<u8, i32, Directed, usize>;
-
-pub struct Colours {
-    colours: Vec<i32>,
-}
+//pub type
 
 // Unlike with a total order we may have arbitrary successors in the
 // traceback matrix. I have not yet figured out what the best level of
@@ -174,7 +170,7 @@ impl<S: Semiring + Copy + Clone + Display> Traceback<S> {
         &self.matrix[i][j]
     }
 
-    pub fn print(&self, g: &Graph<u8, i32, Directed, usize>, query: TextSlice) {
+    pub fn print(&self, g: &Graph<u8, S, Directed, usize>, query: TextSlice) {
         let (m, n) = (g.node_count(), query.len());
         print!(".\t");
         for base in query.iter().take(n) {
@@ -247,19 +243,19 @@ pub struct Aligner<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> {
 
 impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Aligner<S, F> {
     /// Create new instance.
-    pub fn new(scoring: Scoring<S, F>, reference: TextSlice) -> Self {
+    pub fn new(scoring: Scoring<S, F>, reference: TextSlice, colour: S) -> Self {
         Aligner {
             sequence_names: vec![],
             traceback: Traceback::<S>::new(),
             query: reference.to_vec(),
-            poa: Poa::from_string(scoring, reference),
+            poa: Poa::from_string(scoring, reference, colour),
         }
     }
 
     /// Add the alignment of the last query to the graph.
-    pub fn add_to_graph(&mut self) -> &mut Self {
+    pub fn add_to_graph(&mut self, colour: S) -> &mut Self {
         let alignment = self.traceback.alignment();
-        self.poa.add_alignment(&alignment, &self.query);
+        self.poa.add_alignment(&alignment, &self.query, colour);
         self
     }
 
@@ -276,7 +272,7 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Aligner<S, F> {
     }
 
     /// Return alignment graph.
-    pub fn graph(&self) -> &POAGraph {
+    pub fn graph(&self) -> &Graph<u8, S, Directed, usize> {
         &self.poa.graph
     }
 }
@@ -288,7 +284,7 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Aligner<S, F> {
 ///
 pub struct Poa<S: Semiring, F: MatchFunc<S>> {
     scoring: Scoring<S, F>,
-    pub graph: POAGraph,
+    pub graph: Graph<u8, S, Directed, usize>,
 }
 
 impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
@@ -299,7 +295,7 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
     /// * `scoring` - the score struct
     /// * `poa` - the partially ordered reference alignment
     ///
-    pub fn new(scoring: Scoring<S, F>, graph: POAGraph) -> Self {
+    pub fn new(scoring: Scoring<S, F>, graph: Graph<u8, S, Directed, usize>) -> Self {
         Poa { scoring, graph }
     }
 
@@ -310,14 +306,14 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
     /// * `scoring` - the score struct
     /// * `reference` - a reference TextSlice to populate the initial reference graph
     ///
-    pub fn from_string(scoring: Scoring<S, F>, seq: TextSlice) -> Self {
-        let mut graph: Graph<u8, i32, Directed, usize> =
+    pub fn from_string(scoring: Scoring<S, F>, seq: TextSlice, colour: S) -> Self {
+        let mut graph: Graph<u8, S, Directed, usize> =
             Graph::with_capacity(seq.len(), seq.len() - 1);
         let mut prev: NodeIndex<usize> = graph.add_node(seq[0]);
         let mut node: NodeIndex<usize>;
         for base in seq.iter().skip(1) {
             node = graph.add_node(*base);
-            graph.add_edge(prev, node, 1);
+            graph.add_edge(prev, node, colour);
             prev = node;
         }
 
@@ -442,7 +438,7 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
     /// * `aln` - The alignment of the new sequence to the graph
     /// * `seq` - The sequence being incorporated
     ///
-    pub fn add_alignment(&mut self, aln: &Alignment<S>, seq: TextSlice) {
+    pub fn add_alignment(&mut self, aln: &Alignment<S>, seq: TextSlice, colour: S) {
         let mut prev: NodeIndex<usize> = NodeIndex::new(0);
         let mut i: usize = 0;
         for op in aln.operations.iter() {
@@ -454,17 +450,18 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
                     let node = NodeIndex::new(*p);
                     if (seq[i] != self.graph.raw_nodes()[*p].weight) && (seq[i] != b'X') {
                         let node = self.graph.add_node(seq[i]);
-                        self.graph.add_edge(prev, node, 1);
+                        self.graph.add_edge(prev, node, colour);
                         prev = node;
                     } else {
                         // increment node weight
                         match self.graph.find_edge(prev, node) {
                             Some(edge) => {
-                                *self.graph.edge_weight_mut(edge).unwrap() += 1;
+                                let n_c = self.graph.edge_weight(edge).unwrap().mul(colour);
+                                self.graph.update_edge(prev, node, n_c);
                             }
                             None => {
                                 // where the previous node was newly added
-                                self.graph.add_edge(prev, node, 1);
+                                self.graph.add_edge(prev, node, colour);
                             }
                         }
                         prev = NodeIndex::new(*p);
@@ -476,7 +473,7 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
                 }
                 AlignmentOperation::Ins(Some(_)) => {
                     let node = self.graph.add_node(seq[i]);
-                    self.graph.add_edge(prev, node, 1);
+                    self.graph.add_edge(prev, node, colour);
                     prev = node;
                     i += 1;
                 }
@@ -497,7 +494,7 @@ mod tests {
         // sanity check for String -> Graph
 
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
-        let poa = Poa::from_string(scoring, b"123456789");
+        let poa = Poa::from_string(scoring, b"123456789", 1i32);
         assert!(poa.graph.is_directed());
         assert_eq!(poa.graph.node_count(), 9);
         assert_eq!(poa.graph.edge_count(), 8);
@@ -509,7 +506,7 @@ mod tests {
         // examples from the POA paper
         //let _seq1 = b"PKMIVRPQKNETV";
         //let _seq2 = b"THKMLVRNETIM";
-        let poa = Poa::from_string(scoring, b"GATTACA");
+        let poa = Poa::from_string(scoring, b"GATTACA", 1i32);
         let alignment = poa.global(b"GCATGCU").alignment();
         assert_eq!(alignment.score, 0);
 
@@ -525,7 +522,7 @@ mod tests {
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
         let seq1 = b"TTTTT";
         let seq2 = b"TTATT";
-        let mut poa = Poa::from_string(scoring, seq1);
+        let mut poa = Poa::from_string(scoring, seq1, 1i32);
         let head: NodeIndex<usize> = NodeIndex::new(1);
         let tail: NodeIndex<usize> = NodeIndex::new(2);
         let node1 = poa.graph.add_node(b'A');
@@ -543,7 +540,7 @@ mod tests {
 
         let seq1 = b"TTCCTTAA";
         let seq2 = b"TTTTGGAA";
-        let mut poa = Poa::from_string(scoring, seq1);
+        let mut poa = Poa::from_string(scoring, seq1, 1i32);
         let head: NodeIndex<usize> = NodeIndex::new(1);
         let tail: NodeIndex<usize> = NodeIndex::new(2);
         let node1 = poa.graph.add_node(b'A');
@@ -552,7 +549,7 @@ mod tests {
         poa.graph.add_edge(node1, node2, 1);
         poa.graph.add_edge(node2, tail, 1);
         let alignment = poa.global(seq2).alignment();
-        poa.add_alignment(&alignment, seq2);
+        poa.add_alignment(&alignment, seq2, 1i32);
         assert_eq!(poa.graph.edge_count(), 14);
         assert!(poa
             .graph
@@ -569,7 +566,7 @@ mod tests {
         let seq1 = b"TTCCGGTTTAA";
         let seq2 = b"TTGGTATGGGAA";
         let seq3 = b"TTGGTTTGCGAA";
-        let mut poa = Poa::from_string(scoring, seq1);
+        let mut poa = Poa::from_string(scoring, seq1, 1i32);
         let head: NodeIndex<usize> = NodeIndex::new(1);
         let tail: NodeIndex<usize> = NodeIndex::new(2);
         let node1 = poa.graph.add_node(b'C');
@@ -581,7 +578,7 @@ mod tests {
         poa.graph.add_edge(node3, tail, 1);
         let alignment = poa.global(seq2).alignment();
         assert_eq!(alignment.score, 2);
-        poa.add_alignment(&alignment, seq2);
+        poa.add_alignment(&alignment, seq2, 1i32);
         let alignment2 = poa.global(seq3).alignment();
 
         assert_eq!(alignment2.score, 10);
@@ -590,12 +587,12 @@ mod tests {
     #[test]
     fn test_poa_method_chaining() {
         let scoring = Scoring::new(-1, 0, |a: u8, b: u8| if a == b { 1i32 } else { -1i32 });
-        let mut aligner = Aligner::new(scoring, b"TTCCGGTTTAA");
+        let mut aligner = Aligner::new(scoring, b"TTCCGGTTTAA", 1i32);
         aligner
             .global(b"TTGGTATGGGAA")
-            .add_to_graph()
+            .add_to_graph(1i32)
             .global(b"TTGGTTTGCGAA")
-            .add_to_graph();
+            .add_to_graph(1i32);
         assert_eq!(aligner.alignment().score, 10);
     }
 }
