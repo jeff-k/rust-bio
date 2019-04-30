@@ -236,7 +236,7 @@ impl<S: Semiring + Copy + Clone + Display> Traceback<S> {
 /// Uses consuming builder pattern for constructing partial order alignments with method chaining
 pub struct Aligner<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> {
     sequence_names: Vec<String>,
-    traceback: Traceback<S>,
+    pub traceback: Traceback<S>,
     query: Vec<u8>,
     poa: Poa<S, F>,
 }
