@@ -78,21 +78,13 @@ pub struct TracebackCell<S: Semiring> {
 //impl Eq for TracebackCell {}
 
 fn argmax2<S: Semiring>(t1: TracebackCell<S>, t2: TracebackCell<S>) -> TracebackCell<S> {
-    if t1.score > t2.score {
-        TracebackCell {
-            score: t1.score.add(t2.score),
-            op: t1.op,
-        }
-    } else if t2.score > t1.score {
-        TracebackCell {
-            score: t2.score.add(t1.score),
-            op: t2.op,
-        }
-    } else {
-        TracebackCell {
-            score: t1.score,
-            op: t2.op,
-        }
+    let op = match t1.score > t2.score {
+        true => t1.op,
+        false => t2.op,
+    };
+    TracebackCell {
+        score: t1.score.add(t2.score),
+        op: op,
     }
 }
 
