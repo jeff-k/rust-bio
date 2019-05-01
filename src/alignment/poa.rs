@@ -79,9 +79,20 @@ pub struct TracebackCell<S: Semiring> {
 
 fn argmax2<S: Semiring>(t1: TracebackCell<S>, t2: TracebackCell<S>) -> TracebackCell<S> {
     if t1.score > t2.score {
-        t1
+        TracebackCell {
+            score: t1.score.add(t2.score),
+            op: t1.op,
+        }
+    } else if t2.score > t1.score {
+        TracebackCell {
+            score: t2.score.add(t1.score),
+            op: t2.op,
+        }
     } else {
-        t2
+        TracebackCell {
+            score: t1.score,
+            op: t2.op,
+        }
     }
 }
 
@@ -90,7 +101,7 @@ fn argmax3<S: Semiring>(
     t2: TracebackCell<S>,
     t3: TracebackCell<S>,
 ) -> TracebackCell<S> {
-    argmax2(argmax2(t1, t2), t3)
+    argmax2(t1, argmax2(t2, t3))
 }
 
 pub struct Traceback<S: Semiring + Copy + Clone + Display> {
@@ -448,7 +459,7 @@ impl<S: Semiring + Copy + Clone + Display, F: MatchFunc<S>> Poa<S, F> {
                 }
                 AlignmentOperation::Match(Some((_, p))) => {
                     let node = NodeIndex::new(*p);
-                    if (seq[i] != self.graph.raw_nodes()[*p].weight) && (seq[i] != b'X') {
+                    if seq[i] != self.graph.raw_nodes()[*p].weight {
                         let node = self.graph.add_node(seq[i]);
                         self.graph.add_edge(prev, node, colour);
                         prev = node;
