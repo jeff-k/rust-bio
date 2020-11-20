@@ -19,16 +19,16 @@
 //!
 //! ```
 //! use bio::alignment::pairwise::banded::*;
+//! use bio::alignment::pairwise::{Scoring, MIN_SCORE};
 //! use bio::alignment::sparse::hash_kmers;
-//! use bio::alignment::pairwise::{MIN_SCORE, Scoring};
 //! use bio::alignment::AlignmentOperation::*;
 //! use std::iter::repeat;
 //!
 //! let x = b"AGCACACGTGTGCGCTATACAGTAAGTAGTAGTACACGTGTCACAGTTGTACTAGCATGAC";
 //! let y = b"AGCACACGTGTGCGCTATACAGTACACGTGTCACAGTTGTACTAGCATGAC";
-//! let score = |a: u8, b: u8| if a == b {1i32} else {-1i32};
-//! let k = 8;  // kmer match length
-//! let w = 6;  // Window size for creating the band
+//! let score = |a: u8, b: u8| if a == b { 1i32 } else { -1i32 };
+//! let k = 8; // kmer match length
+//! let w = 6; // Window size for creating the band
 //! let mut aligner = Aligner::new(-5, -1, score, k, w);
 //! let alignment = aligner.local(x, y);
 //! // aligner.global(x, y), aligner.semiglobal(x, y) are also supported
@@ -57,18 +57,18 @@
 //! let scoring = Scoring {
 //!     gap_open: -5,
 //!     gap_extend: -1,
-//!     match_fn: |a: u8, b: u8| if a == b {1i32} else {-3i32},
+//!     match_fn: |a: u8, b: u8| if a == b { 1i32 } else { -3i32 },
 //!     match_scores: Some((1, -3)),
 //!     xclip_prefix: -10,
 //!     xclip_suffix: MIN_SCORE,
 //!     yclip_prefix: 0,
-//!     yclip_suffix: 0
+//!     yclip_suffix: 0,
 //! };
 //! let x = b"GGGGGGACGTACGTACGTGTGCATCATCATGTGCGTATCATAGATAGATGTAGATGATCCACAGT";
 //! let y = b"AAAAACGTACGTACGTGTGCATCATCATGTGCGTATCATAGATAGATGTAGATGATCCACAGTAAAA";
 //! let mut aligner = Aligner::with_capacity_and_scoring(x.len(), y.len(), scoring, k, w);
 //! let alignment = aligner.custom(x, y);
-//! println!("{}", alignment.pretty(x,y));
+//! println!("{}", alignment.pretty(x, y));
 //! assert_eq!(alignment.score, 49);
 //! let mut correct_ops = Vec::new();
 //! correct_ops.push(Yclip(4));
@@ -82,8 +82,7 @@
 
 use crate::alignment::{Alignment, AlignmentOperation};
 use crate::utils::TextSlice;
-use std::cmp::max;
-use std::cmp::min;
+use std::cmp::{max, min, Ordering};
 use std::i32;
 use std::ops::Range;
 
@@ -137,7 +136,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `match_fn` - function that returns the score for substitutions (also see bio::scores)
     /// * `k` - kmer length used in constructing the band
     /// * `w` - width of the band
-    ///
     pub fn new(gap_open: i32, gap_extend: i32, match_fn: F, k: usize, w: usize) -> Self {
         Aligner::with_capacity(
             DEFAULT_ALIGNER_CAPACITY,
@@ -162,7 +160,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `match_fn` - function that returns the score for substitutions (also see bio::scores)
     /// * `k` - kmer length used in constructing the band
     /// * `w` - width of the band
-    ///
     pub fn with_capacity(
         m: usize,
         n: usize,
@@ -197,7 +194,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `scoring` - the scoring struct
     /// * `k` - kmer length used in constructing the band
     /// * `w` - width of the band
-    ///
     pub fn with_capacity_and_scoring(
         m: usize,
         n: usize,
@@ -249,7 +245,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `scoring` - the scoring struct
     /// * `k` - kmer length used in constructing the band
     /// * `w` - width of the band
-    ///
     pub fn with_scoring(scoring: Scoring<F>, k: usize, w: usize) -> Self {
         Aligner::with_capacity_and_scoring(
             DEFAULT_ALIGNER_CAPACITY,
@@ -260,13 +255,19 @@ impl<F: MatchFunc> Aligner<F> {
         )
     }
 
+    /// Return a mutable reference to scoring. Useful if you want to have a
+    /// single aligner object but want to modify the scores within it for
+    /// different cases
+    pub fn get_mut_scoring(&mut self) -> &mut Scoring<F> {
+        &mut self.scoring
+    }
+
     /// Compute the alignment with custom clip penalties
     ///
     /// # Arguments
     ///
     /// * `x` - Textslice
     /// * `y` - Textslice
-    ///
     pub fn custom(&mut self, x: TextSlice<'_>, y: TextSlice<'_>) -> Alignment {
         self.band = Band::create(x, y, self.k, self.w, &self.scoring);
         self.compute_alignment(x, y)
@@ -279,7 +280,6 @@ impl<F: MatchFunc> Aligner<F> {
     ///
     /// * `x` - Textslice
     /// * `y` - Textslice
-    ///
     pub fn custom_with_prehash(
         &mut self,
         x: TextSlice<'_>,
@@ -299,7 +299,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `x` - Textslice
     /// * `y` - Textslice
     /// * `matches` - Vector of kmer matching pairs (xpos, ypos)
-    ///
     pub fn custom_with_matches(
         &mut self,
         x: TextSlice<'_>,
@@ -325,7 +324,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `allowed_mismatches` - Extend the matches diagonally allowing upto
     /// the specified number of mismatches (Option<usize>)
     /// * `use_lcskpp_union` - Extend the results from sdpkpp using lcskpp
-    ///
     pub fn custom_with_expanded_matches(
         &mut self,
         x: TextSlice<'_>,
@@ -364,6 +362,30 @@ impl<F: MatchFunc> Aligner<F> {
             Band::create_with_matches(x, y, self.k, self.w, &self.scoring, &expanded_matches)
         };
 
+        self.compute_alignment(x, y)
+    }
+
+    /// Compute the alignment with custom clip penalties by constructing
+    /// a band along the `matches` as defined by `path`. This is only
+    /// for advanced uses, where one would want to control the kmer
+    /// backbone that is used for creating the band.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - Textslice
+    /// * `y` - Textslice
+    /// * `matches` - Vector of kmer matching pairs (xpos, ypos)
+    /// * `path` - Vector of indices pointing to `matches` vector
+    /// which defines a path. The validity of the path is not checked.
+    pub fn custom_with_match_path(
+        &mut self,
+        x: TextSlice,
+        y: TextSlice,
+        matches: &[(u32, u32)],
+        path: &[usize],
+    ) -> Alignment {
+        self.band =
+            Band::create_from_match_path(x, y, self.k, self.w, &self.scoring, path, matches);
         self.compute_alignment(x, y)
     }
 
@@ -451,6 +473,7 @@ impl<F: MatchFunc> Aligner<F> {
                 if self.S[curr][i] + self.scoring.xclip_suffix > self.S[curr][m] {
                     self.S[curr][m] = self.S[curr][i] + self.scoring.xclip_suffix;
                     self.Lx[0] = m - i;
+                    self.traceback.get_mut(m, 0).set_s_bits(TB_XCLIP_SUFFIX);
                 }
 
                 self.traceback.set(i, 0, tb);
@@ -463,6 +486,15 @@ impl<F: MatchFunc> Aligner<F> {
 
             if i_end < (m + 1) {
                 self.S[curr][m] = MIN_SCORE;
+            }
+            // Track the score if we do clip (y) from origin
+            if self.scoring.yclip_prefix > self.scoring.yclip_suffix {
+                self.Sn[0] = self.scoring.yclip_prefix;
+                self.traceback.get_mut(0, n).set_s_bits(TB_YCLIP_PREFIX);
+            } else {
+                self.Sn[0] = self.scoring.yclip_suffix;
+                self.Ly[0] = n;
+                self.traceback.get_mut(0, n).set_s_bits(TB_YCLIP_SUFFIX);
             }
         }
 
@@ -507,6 +539,7 @@ impl<F: MatchFunc> Aligner<F> {
                 if self.S[curr][0] + self.scoring.yclip_suffix > self.Sn[0] {
                     self.Sn[0] = self.S[curr][0] + self.scoring.yclip_suffix;
                     self.Ly[0] = n - j;
+                    self.traceback.get_mut(0, n).set_s_bits(TB_YCLIP_SUFFIX);
                 }
                 self.traceback.set(0, j, tb);
             }
@@ -521,7 +554,11 @@ impl<F: MatchFunc> Aligner<F> {
             let q = y[j - 1];
             let xclip_score = self.scoring.xclip_prefix
                 + max(
-                    self.scoring.yclip_prefix,
+                    if j == n {
+                        max(self.scoring.yclip_prefix, self.Sn[0])
+                    } else {
+                        self.scoring.yclip_prefix
+                    },
                     self.scoring.gap_open + self.scoring.gap_extend * (j as i32),
                 );
 
@@ -533,13 +570,21 @@ impl<F: MatchFunc> Aligner<F> {
 
                 let i_score = self.I[curr][i - 1] + self.scoring.gap_extend;
                 let s_score = self.S[curr][i - 1] + self.scoring.gap_open + self.scoring.gap_extend;
-                let best_i_score;
+                let mut best_i_score;
                 if i_score > s_score {
                     best_i_score = i_score;
                     tb.set_i_bits(TB_INS);
                 } else {
                     best_i_score = s_score;
                     tb.set_i_bits(self.traceback.get(i - 1, j).get_s_bits());
+                }
+                if j == n {
+                    let clip_score =
+                        self.Sn[i - 1] + self.scoring.gap_open + self.scoring.gap_extend;
+                    if clip_score > best_i_score {
+                        best_i_score = clip_score;
+                        tb.set_i_bits(TB_YCLIP_SUFFIX);
+                    }
                 }
 
                 let d_score = self.D[prev][i] + self.scoring.gap_extend;
@@ -596,21 +641,24 @@ impl<F: MatchFunc> Aligner<F> {
                 if self.S[curr][i] + self.scoring.xclip_suffix > self.S[curr][m] {
                     self.S[curr][m] = self.S[curr][i] + self.scoring.xclip_suffix;
                     self.Lx[j] = m - i;
+                    self.traceback.get_mut(m, j).set_s_bits(TB_XCLIP_SUFFIX);
                 }
 
                 // Track the score if we do suffix clip (y) from here
                 if self.S[curr][i] + self.scoring.yclip_suffix > self.Sn[i] {
                     self.Sn[i] = self.S[curr][i] + self.scoring.yclip_suffix;
                     self.Ly[i] = n - j;
+                    self.traceback.get_mut(i, n).set_s_bits(TB_YCLIP_SUFFIX);
                 }
 
                 self.traceback.set(i, j, tb);
             }
 
-            // Suffix clip (y) from i = m and reset S[curr][m] if required
+            // Suffix clip (y) from i = m and reset Sn[m] if required
             if self.S[curr][m] + self.scoring.yclip_suffix > self.Sn[m] {
                 self.Sn[m] = self.S[curr][m] + self.scoring.yclip_suffix;
                 self.Ly[m] = n - j;
+                self.traceback.get_mut(m, n).set_s_bits(TB_YCLIP_SUFFIX);
             }
             if i_end < (m + 1) {
                 self.traceback.get_mut(m, j).set_s_bits(TB_XCLIP_SUFFIX);
@@ -628,6 +676,11 @@ impl<F: MatchFunc> Aligner<F> {
         for i in 0..=m {
             let j = n;
             let curr = j % 2;
+            // These entries are not set in the loop above and could contain leftover
+            // values from previous columns. Reset them to MIN_SCORE
+            if i != m && (i < self.band.ranges[j].start || i > self.band.ranges[j].end) {
+                self.S[curr][i] = MIN_SCORE;
+            }
             if self.Sn[i] > self.S[curr][i] {
                 self.S[curr][i] = self.Sn[i];
                 self.traceback.get_mut(i, j).set_s_bits(TB_YCLIP_SUFFIX);
@@ -657,6 +710,48 @@ impl<F: MatchFunc> Aligner<F> {
                     self.S[curr][m] = self.S[curr][i] + self.scoring.xclip_suffix;
                     self.Lx[j] = m - i;
                     self.traceback.get_mut(m, j).set_s_bits(TB_XCLIP_SUFFIX);
+                }
+            }
+        }
+
+        for j in 1..=n {
+            let d_score = self.scoring.gap_open + self.scoring.gap_extend * (j as i32);
+            if d_score > self.scoring.yclip_prefix {
+                self.traceback.get_mut(0, j).set_s_bits(TB_DEL);
+            } else {
+                self.traceback.get_mut(0, j).set_s_bits(TB_YCLIP_PREFIX);
+            }
+            if j == n {
+                let mut best_score = max(d_score, self.scoring.yclip_prefix);
+                if self.scoring.yclip_suffix > best_score {
+                    best_score = self.scoring.yclip_suffix;
+                    self.traceback.get_mut(0, j).set_s_bits(TB_YCLIP_SUFFIX);
+                }
+                if (self.scoring.xclip_suffix + best_score) > self.S[n % 2][m] {
+                    self.S[n % 2][m] = self.scoring.xclip_suffix + best_score;
+                    self.Lx[n] = m;
+                    self.traceback.get_mut(m, n).set_s_bits(TB_XCLIP_SUFFIX);
+                }
+            }
+        }
+
+        for i in 1..=m {
+            let c_score = self.scoring.gap_open + self.scoring.gap_extend * (i as i32);
+            if c_score > self.scoring.xclip_prefix {
+                self.traceback.get_mut(i, 0).set_s_bits(TB_INS);
+            } else {
+                self.traceback.get_mut(i, 0).set_s_bits(TB_XCLIP_PREFIX);
+            }
+            if i == m {
+                let mut best_score = max(c_score, self.scoring.xclip_prefix);
+                if self.scoring.xclip_suffix > best_score {
+                    best_score = self.scoring.xclip_suffix;
+                    self.traceback.get_mut(i, 0).set_s_bits(TB_XCLIP_SUFFIX);
+                }
+                if (self.scoring.yclip_suffix + best_score) > self.S[n % 2][m] {
+                    self.S[n % 2][m] = self.scoring.yclip_suffix + best_score;
+                    self.Ly[m] = n;
+                    self.traceback.get_mut(m, n).set_s_bits(TB_YCLIP_SUFFIX);
                 }
             }
         }
@@ -732,9 +827,7 @@ impl<F: MatchFunc> Aligner<F> {
             // Insert all i characters
             let i_score = self.scoring.gap_open + self.scoring.gap_extend * (i as i32);
             if i_score > self.scoring.xclip_prefix {
-                for _ in 0..i {
-                    operations.push(AlignmentOperation::Ins);
-                }
+                operations.resize(operations.len() + i, AlignmentOperation::Ins);
                 xstart = 0;
             } else {
                 operations.push(AlignmentOperation::Xclip(i));
@@ -744,10 +837,8 @@ impl<F: MatchFunc> Aligner<F> {
         if j != 0 {
             // Delete all j characters
             let d_score = self.scoring.gap_open + self.scoring.gap_extend * (j as i32);
-            if d_score > self.scoring.xclip_prefix {
-                for _ in 0..j {
-                    operations.push(AlignmentOperation::Del);
-                }
+            if d_score > self.scoring.yclip_prefix {
+                operations.resize(operations.len() + j, AlignmentOperation::Del);
                 ystart = 0;
             } else {
                 operations.push(AlignmentOperation::Yclip(j));
@@ -960,15 +1051,10 @@ impl Band {
     // * `n` - the expected size of y
     //
     fn new(m: usize, n: usize) -> Self {
-        let mut ranges: Vec<Range<usize>> = Vec::with_capacity(n + 1);
-        for _ in 0..=n {
-            ranges.push(m + 1..0);
-        }
-
         Band {
             rows: m + 1,
             cols: n + 1,
-            ranges,
+            ranges: vec![m + 1..0; n + 1],
         }
     }
 
@@ -1089,16 +1175,13 @@ impl Band {
                 // we need to find a zero cost cell
 
                 // First try the diagonal
-                let diagonal_score;
-                if r > c {
+                let diagonal_score = match r.cmp(&c) {
                     // We will hit (r-c, 0)
-                    diagonal_score = scoring.xclip_prefix;
-                } else if c > r {
+                    Ordering::Greater => scoring.xclip_prefix,
                     // We will hit (0, c-r)
-                    diagonal_score = scoring.yclip_prefix;
-                } else {
-                    diagonal_score = 0;
-                }
+                    Ordering::Less => scoring.yclip_prefix,
+                    Ordering::Equal => 0,
+                };
 
                 if diagonal_score == 0 {
                     let d = min(r, c);
@@ -1154,17 +1237,14 @@ impl Band {
                 // First try the diagonal
                 let dr = self.rows - r;
                 let dc = self.cols - c;
-                let diagonal_score;
-                if dr > dc {
+                let diagonal_score = match dr.cmp(&dc) {
                     // We will hit (r+dc, self.cols)
-                    diagonal_score = scoring.xclip_suffix;
-                } else if dc > dr {
+                    Ordering::Greater => scoring.xclip_suffix,
                     // We will hit (self.rows, c+dr)
-                    diagonal_score = scoring.yclip_suffix;
-                } else {
+                    Ordering::Less => scoring.yclip_suffix,
                     // We will hit the corner
-                    diagonal_score = 0;
-                }
+                    Ordering::Equal => 0,
+                };
 
                 if diagonal_score == 0 {
                     let d = min(dr, dc);
@@ -1280,9 +1360,7 @@ impl Band {
 
     fn full_matrix(&mut self) {
         self.ranges.clear();
-        for _ in 0..self.cols {
-            self.ranges.push(0..self.rows);
-        }
+        self.ranges.resize(self.cols, 0..self.rows);
     }
 
     fn num_cells(&self) -> usize {
@@ -2090,5 +2168,243 @@ mod banded {
 
         println!("{}", alignment.pretty(x, y));
         assert_eq!(alignment.score, 7);
+    }
+
+    #[test]
+    fn test_yclip_suffix_only() {
+        let x = b"GGACTTCGGAAGGCACTACTGAAACTCCGT";
+        let y = b"AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC";
+        let base_score = Scoring::from_scores(0, -1, 1, -1);
+        let scoring = Scoring {
+            xclip_prefix: 0,
+            xclip_suffix: 0,
+            yclip_suffix: 0,
+            ..base_score
+        };
+        let mut aligner = banded::Aligner::with_scoring(scoring.clone(), 6, 5);
+        let alignment = aligner.custom(x, y);
+        assert_eq!(alignment.ystart, 0);
+    }
+
+    #[test]
+    fn test_yclip_prefix_only() {
+        let x = b"AATAATAAAAAAA";
+        let y = b"AAAAAAGTTTCACCTTA";
+        let base_score = Scoring::from_scores(0, -1, 1, -1);
+        let scoring = Scoring {
+            xclip_prefix: 0,
+            xclip_suffix: 0,
+            yclip_prefix: 0,
+            ..base_score
+        };
+        let mut aligner = banded::Aligner::with_scoring(scoring.clone(), 6, 5);
+        let alignment = aligner.custom(x, y);
+        assert_eq!(alignment.yend, alignment.ylen);
+    }
+
+    #[test]
+    fn test_traceback_outside_band() {
+        let x = b"TTGTGGGTGGGGGGAAAAAAAAA";
+        let y = b"GACAAGAGCCCAAGGAAAGAAAA";
+        let base_score = Scoring::from_scores(-5, 0, 1, -3);
+        let scoring = Scoring {
+            xclip_prefix: 0,
+            xclip_suffix: 0,
+            yclip_suffix: 0,
+            ..base_score
+        };
+        let kmer_len = 5;
+        let window_len = 5;
+        let mut al = pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+        let alignment = al.custom(x, y);
+        assert_eq!(alignment.ystart, 0);
+    }
+
+    #[test]
+    fn test_deletions_ouside_band() {
+        let x = b"AAAAATTGAGGAGTAATAGTAAA";
+        let y = b"AAAAAAAAAAAAGGAAGG";
+        let base_score = Scoring::from_scores(-13, 0, 1, -5);
+        let scoring = Scoring {
+            xclip_prefix: 0,
+            xclip_suffix: -136,
+            yclip_prefix: -112,
+            yclip_suffix: -51,
+            ..base_score
+        };
+        let kmer_len = 5;
+        let window_len = 8;
+        let mut al = pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+        let alignment = al.custom(x, y);
+        assert_eq!(alignment.score, -13);
+        assert_eq!(
+            alignment.operations,
+            [
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Del,
+                Xclip(23)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_insertion_ouside_band() {
+        let x = b"AATCTAAAAAAAAAAAAAAAAC";
+        let y = b"AATATAAAAAGAAAAAGAA";
+
+        let base_score = Scoring::from_scores(-15, 0, 1, -6);
+
+        let scoring = Scoring {
+            xclip_prefix: -255,
+            xclip_suffix: -255,
+            yclip_prefix: 0,
+            yclip_suffix: -54,
+            ..base_score
+        };
+        let kmer_len = 5;
+        let window_len = 7;
+        let mut al = pairwise::banded::Aligner::with_scoring(scoring, kmer_len, window_len);
+        let alignment = al.custom(x, y);
+        assert_eq!(alignment.score, -15);
+        assert_eq!(
+            alignment.operations,
+            [
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Ins,
+                Yclip(19)
+            ]
+        );
+    }
+
+    #[test]
+    fn test_insertion_after_clip() {
+        let x = b"AAAAAAGTAAAATTT";
+        let y = b"AAAAAAAAAAACAAAAAAG";
+
+        let base_score = Scoring::from_scores(-3, 0, 3, -5);
+
+        let scoring = Scoring {
+            xclip_prefix: 0,
+            yclip_prefix: 0,
+            yclip_suffix: 0,
+            ..base_score
+        };
+        let kmer_len = 5;
+        let window_len = 7;
+        let mut al = pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+        let alignment = al.custom(x, y);
+        assert_eq!(alignment.score, 24);
+    }
+
+    #[test]
+    fn test_only_clips() {
+        let x = b"GTAAAAAAGCCCAGA";
+        let y = b"AAAGTAAAAACAATGACAAAAAAAA";
+        let base_score = Scoring::from_scores(-15, -5, 1, -5);
+        let scoring = Scoring {
+            xclip_prefix: -255,
+            xclip_suffix: -22,
+            yclip_prefix: -54,
+            yclip_suffix: -50,
+            ..base_score
+        };
+        let kmer_len = 10;
+        let window_len = 10;
+        let mut al = pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+        let alignment = al.custom(x, y);
+        assert_eq!(alignment.score, -72);
+    }
+
+    #[test]
+    fn test_zero_score_clips() {
+        let x = b"AA";
+        let y = b"CC";
+        let kmer_len = 5;
+        let window_len = 5;
+
+        let base_score = Scoring::from_scores(-1, -1, 1, -1);
+        {
+            let scoring = Scoring {
+                xclip_prefix: 0,
+                yclip_prefix: 0,
+                ..base_score.clone()
+            };
+            let mut al =
+                pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
+
+        {
+            let scoring = Scoring {
+                xclip_prefix: 0,
+                yclip_suffix: 0,
+                ..base_score.clone()
+            };
+            let mut al =
+                pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
+
+        {
+            let scoring = Scoring {
+                xclip_suffix: 0,
+                yclip_prefix: 0,
+                ..base_score.clone()
+            };
+            let mut al =
+                pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
+
+        {
+            let scoring = Scoring {
+                xclip_suffix: 0,
+                yclip_suffix: 0,
+                ..base_score.clone()
+            };
+            let mut al =
+                pairwise::banded::Aligner::with_scoring(scoring.clone(), kmer_len, window_len);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
     }
 }

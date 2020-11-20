@@ -27,10 +27,8 @@
 //! assert_eq!(match_path, vec![(0,2), (1,3), (2,4), (3,5), (4,6), (5,7), (6,8)]);
 //! assert_eq!(sparse_al.score, 14);
 
-use fxhash;
-
-use self::fxhash::FxHasher;
 use crate::data_structures::bit_tree::MaxBitTree;
+use fxhash::FxHasher;
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
@@ -92,15 +90,13 @@ pub fn lcskpp(matches: &[(u32, u32)], k: usize) -> SparseAlignmentResult {
         n = max(n, x + k);
         n = max(n, y + k);
     }
-    events.sort();
+    events.sort_unstable();
 
     let mut max_col_dp: MaxBitTree<(u32, u32)> = MaxBitTree::new(n as usize);
     let mut dp: Vec<(u32, i32)> = Vec::with_capacity(events.len());
     let mut best_dp = (k, 0);
 
-    for _ in 0..events.len() {
-        dp.push((0, 0));
-    }
+    dp.resize(events.len(), (0, 0));
 
     for ev in events {
         let p = (ev.2 % matches.len() as u32) as usize;
@@ -223,15 +219,13 @@ pub fn sdpkpp(
         n = max(n, x + k);
         n = max(n, y + k);
     }
-    events.sort();
+    events.sort_unstable();
 
     let mut max_col_dp: MaxBitTree<PrevPtr> = MaxBitTree::new(n as usize);
     let mut dp: Vec<(u32, i32)> = Vec::with_capacity(events.len());
     let mut best_dp = (k, 0);
 
-    for _ in 0..events.len() {
-        dp.push((0, 0));
-    }
+    dp.resize(events.len(), (0, 0));
 
     for ev in events {
         let p = (ev.2 % matches.len() as u32) as usize;
@@ -377,7 +371,7 @@ pub fn find_kmer_matches_seq1_hashed(
         }
     }
 
-    matches.sort();
+    matches.sort_unstable();
     matches
 }
 
@@ -400,7 +394,7 @@ pub fn find_kmer_matches_seq2_hashed(
         }
     }
 
-    matches.sort();
+    matches.sort_unstable();
     matches
 }
 
@@ -453,7 +447,7 @@ pub fn expand_kmer_matches(
         last_match_along_diagonal.insert(diag, (this_match.0 as i32, this_match.1 as i32));
     }
 
-    left_expanded_matches.sort();
+    left_expanded_matches.sort_unstable();
     let mut expanded_matches = left_expanded_matches.clone();
     left_expanded_matches.reverse();
 
@@ -494,7 +488,7 @@ pub fn expand_kmer_matches(
 
         next_match_along_diagonal.insert(diag, this_match);
     }
-    expanded_matches.sort();
+    expanded_matches.sort_unstable();
     expanded_matches
 }
 

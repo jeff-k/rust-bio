@@ -12,9 +12,16 @@
 //! # Example
 //!
 //! ```
-//! use std::io;
+//! // import functions (at top of script)
 //! use bio::io::gff;
-//! let reader = gff::Reader::new(io::stdin(), gff::GffType::GFF3);
+//! use std::io;
+//! let mut reader = gff::Reader::new(io::stdin(), gff::GffType::GFF3);
+//! let mut writer = gff::Writer::new(vec![], gff::GffType::GFF3);
+//! for record in reader.records() {
+//!     let rec = record.ok().expect("Error reading record.");
+//!     println!("{}", rec.seqname());
+//!     writer.write(&rec).ok().expect("Error writing record.");
+//! }
 //! ```
 
 use itertools::Itertools;
@@ -24,8 +31,7 @@ use std::convert::AsRef;
 use std::fs;
 use std::io;
 use std::path::Path;
-
-use csv;
+use std::str::FromStr;
 
 use bio_types::strand::Strand;
 
@@ -34,7 +40,7 @@ use bio_types::strand::Strand;
 /// We have three format in the GFF family.
 /// The change is in the last field of GFF.
 /// For each type we have key value separator and field separator
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GffType {
     /// Attribute format is: key1=value; key2=value1,value2
     GFF3,
@@ -46,6 +52,27 @@ pub enum GffType {
     /// second field separates multiple key value pairs, and
     /// third field separates multiple values for the same key
     Any(u8, u8, u8),
+}
+
+impl FromStr for GffType {
+    type Err = String;
+
+    /// Create a GffType from a string.
+    ///
+    /// # Arguments
+    ///
+    /// * `src_str` - The source string to convert to the GffType.
+    fn from_str(src_str: &str) -> Result<Self, Self::Err> {
+        match src_str {
+            "gff3" => Ok(GffType::GFF3),
+            "gff2" => Ok(GffType::GFF2),
+            "gtf2" => Ok(GffType::GTF2),
+            _ => Err(format!(
+                "String '{}' is not a valid GFFType (GFF/GTF format version).",
+                src_str
+            )),
+        }
+    }
 }
 
 impl GffType {
@@ -119,7 +146,7 @@ type GffRecordInner = (
     String,
 );
 
-/// A GFF record.
+/// An iterator over the records of a GFF file.
 pub struct Records<'a, R: io::Read> {
     inner: csv::DeserializeRecordsIter<'a, R, GffRecordInner>,
     attribute_re: Regex,
@@ -177,6 +204,7 @@ pub struct Writer<W: io::Write> {
 
 impl Writer<fs::File> {
     /// Write to a given file path in given format.
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_file<P: AsRef<Path>>(path: P, fileformat: GffType) -> io::Result<Self> {
         fs::File::create(path).map(|f| Writer::new(f, fileformat))
     }
@@ -445,6 +473,24 @@ P0A7B8\tUniProtKB\tChain\t2\t176\t50\t+\t.\tID PRO_0000148105
             assert_eq!(record.frame(), frame[i]);
             assert_eq!(record.attributes(), &attributes[i]);
         }
+    }
+
+    #[test]
+    fn test_gff_type_from_str() {
+        let gff3 = GffType::from_str("gff3").expect("Error parsing");
+        assert_eq!(gff3, GffType::GFF3);
+
+        let gff2 = GffType::from_str("gff2").expect("Error parsing");
+        assert_eq!(gff2, GffType::GFF2);
+
+        let gtf2 = GffType::from_str("gtf2").expect("Error parsing");
+        assert_eq!(gtf2, GffType::GTF2);
+
+        let unk = GffType::from_str("unknown").unwrap_err();
+        assert_eq!(
+            unk,
+            "String 'unknown' is not a valid GFFType (GFF/GTF format version)."
+        )
     }
 
     #[test]

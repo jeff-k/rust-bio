@@ -16,16 +16,18 @@
 //!
 //! let x = b"ACCGTGGAT";
 //! let y = b"AAAAACCGTTGAT";
-//! let score = |a: u8, b: u8| if a == b {1i32} else {-1i32};
+//! let score = |a: u8, b: u8| if a == b { 1i32 } else { -1i32 };
 //! let mut aligner = Aligner::with_capacity(x.len(), y.len(), -5, -1, &score);
 //! let alignment = aligner.semiglobal(x, y);
 //! // x is global (target sequence) and y is local (reference sequence)
 //! assert_eq!(alignment.ystart, 4);
 //! assert_eq!(alignment.xstart, 0);
-//! assert_eq!(alignment.operations,
-//!     [Match, Match, Match, Match, Match, Subst, Match, Match, Match]);
+//! assert_eq!(
+//!     alignment.operations,
+//!     [Match, Match, Match, Match, Match, Subst, Match, Match, Match]
+//! );
 //!
-//! // If you don't known sizes of future sequences, you could
+//! // If you don't know sizes of future sequences, you could
 //! // use Aligner::new().
 //! // Global alignment:
 //! let mut aligner = Aligner::new(-5, -1, &score);
@@ -43,29 +45,44 @@
 //! // for achieving the three standard modes as follows.
 //!
 //! // scoring for semiglobal mode
-//! let scoring = Scoring::new( -5, -1, &score) // Gap open, gap extend and match score function
-//!    .xclip(MIN_SCORE) // Clipping penalty for x set to 'negative infinity', hence global in x
-//!    .yclip(0); // Clipping penalty for y set to 0, hence local in y
+//! let scoring = Scoring::new(-5, -1, &score) // Gap open, gap extend and match score function
+//!     .xclip(MIN_SCORE) // Clipping penalty for x set to 'negative infinity', hence global in x
+//!     .yclip(0); // Clipping penalty for y set to 0, hence local in y
 //! let mut aligner = Aligner::with_scoring(scoring);
-//! let alignment = aligner.custom(x,y); // The custom aligner invocation
+//! let alignment = aligner.custom(x, y); // The custom aligner invocation
 //! assert_eq!(alignment.ystart, 4);
 //! assert_eq!(alignment.xstart, 0);
 //! // Note that in the custom mode, the clips are explicitly mentioned in the operations
-//! assert_eq!(alignment.operations,
-//!     [Yclip(4), Match, Match, Match, Match, Match, Subst, Match, Match, Match]);
+//! assert_eq!(
+//!     alignment.operations,
+//!     [
+//!         Yclip(4),
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Subst,
+//!         Match,
+//!         Match,
+//!         Match
+//!     ]
+//! );
 //!
 //! // scoring for global mode
-//! // scoring can also be created usinf from_scores if the match and mismatch scores are constants
-//! let scoring = Scoring::from_scores( -5, -1, 1, -1) // Gap open, extend, match, mismatch score
-//!     .xclip(MIN_SCORE)  // Clipping penalty for x set to 'negative infinity', hence global in x
+//! // scoring can also be created using from_scores if the match and mismatch scores are constants
+//! let scoring = Scoring::from_scores(-5, -1, 1, -1) // Gap open, extend, match, mismatch score
+//!     .xclip(MIN_SCORE) // Clipping penalty for x set to 'negative infinity', hence global in x
 //!     .yclip(MIN_SCORE); // Clipping penalty for y set to 'negative infinity', hence global in y
 //! let mut aligner = Aligner::with_scoring(scoring);
-//! let alignment = aligner.custom(x,y); // The custom aligner invocation
+//! let alignment = aligner.custom(x, y); // The custom aligner invocation
 //! assert_eq!(alignment.ystart, 0);
 //! assert_eq!(alignment.xstart, 0);
 //! // Note that in the custom mode, the clips are explicitly mentioned in the operations
-//! assert_eq!(alignment.operations,
-//!     [Del, Del, Del, Del, Match, Match, Match, Match, Match, Subst, Match, Match, Match]);
+//! assert_eq!(
+//!     alignment.operations,
+//!     [Del, Del, Del, Del, Match, Match, Match, Match, Match, Subst, Match, Match, Match]
+//! );
 //!
 //! // Similarly if the clip penalties are both set to 0, we have local alignment mode. The scoring
 //! // struct also lets users set different penalties for prefix/suffix clipping, thereby letting
@@ -80,21 +97,39 @@
 //! let scoring = Scoring {
 //!     gap_open: -5,
 //!     gap_extend: -1,
-//!     match_fn: |a: u8, b: u8| if a == b {1i32} else {-3i32},
+//!     match_fn: |a: u8, b: u8| if a == b { 1i32 } else { -3i32 },
 //!     match_scores: Some((1, -3)),
 //!     xclip_prefix: -10,
 //!     xclip_suffix: MIN_SCORE,
 //!     yclip_prefix: 0,
-//!     yclip_suffix: 0
+//!     yclip_suffix: 0,
 //! };
 //! let x = b"GGGGGGACGTACGTACGT";
 //! let y = b"AAAAACGTACGTACGTAAAA";
 //! let mut aligner = Aligner::with_capacity_and_scoring(x.len(), y.len(), scoring);
 //! let alignment = aligner.custom(x, y);
-//! println!("{}", alignment.pretty(x,y));
+//! println!("{}", alignment.pretty(x, y));
 //! assert_eq!(alignment.score, 2);
-//! assert_eq!(alignment.operations, [Yclip(4), Xclip(6), Match, Match, Match, Match,
-//!    Match, Match, Match, Match, Match, Match, Match, Match, Yclip(4)]);
+//! assert_eq!(
+//!     alignment.operations,
+//!     [
+//!         Yclip(4),
+//!         Xclip(6),
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Match,
+//!         Yclip(4)
+//!     ]
+//! );
 //! ```
 
 use std::cmp::max;
@@ -106,9 +141,9 @@ use crate::utils::TextSlice;
 
 pub mod banded;
 
-/// Value to use as a 'negative infinity' score. Should be close to i32::MIN,
+/// Value to use as a 'negative infinity' score. Should be close to `i32::MIN`,
 /// but avoid underflow when used with reasonable scoring parameters or even
-/// adding two negative infinities. Use ~ 0.4 * i32::MIN
+/// adding two negative infinities. Use ~ `0.4 * i32::MIN`
 pub const MIN_SCORE: i32 = -858_993_459;
 
 /// Trait required to instantiate a Scoring instance
@@ -131,7 +166,6 @@ impl MatchParams {
     ///
     /// * `match_score` - the score for a match (should not be negative)
     /// * `mismatch_score` - the score for a mismatch (should not be positive)
-    ///
     pub fn new(match_score: i32, mismatch_score: i32) -> Self {
         assert!(match_score >= 0, "match_score can't be negative");
         assert!(mismatch_score <= 0, "mismatch_score can't be positive");
@@ -165,8 +199,10 @@ where
 }
 
 /// Details of scoring are encapsulated in this structure.
-/// An affine gap score model is used so that the gap score for a length 'k' is:
-/// GapScore(k) = gap_open + gap_extend * k
+///
+/// An [affine gap score model](https://en.wikipedia.org/wiki/Gap_penalty#Affine)
+/// is used so that the gap score for a length `k` is:
+/// `GapScore(k) = gap_open + gap_extend * k`
 #[derive(Debug, Clone)]
 pub struct Scoring<F: MatchFunc> {
     pub gap_open: i32,
@@ -181,7 +217,7 @@ pub struct Scoring<F: MatchFunc> {
 
 impl Scoring<MatchParams> {
     /// Create new Scoring instance with given gap open, gap extend penalties
-    /// match and mismatch scores. The clip penalties are set to MIN_SCORE by default
+    /// match and mismatch scores. The clip penalties are set to `MIN_SCORE` by default
     ///
     /// # Arguments
     ///
@@ -189,7 +225,6 @@ impl Scoring<MatchParams> {
     /// * `gap_extend` - the score for extending a gap (should not be positive)
     /// * `match_score` - the score for a match
     /// * `mismatch_score` - the score for a mismatch
-    ///
     pub fn from_scores(
         gap_open: i32,
         gap_extend: i32,
@@ -214,14 +249,14 @@ impl Scoring<MatchParams> {
 
 impl<F: MatchFunc> Scoring<F> {
     /// Create new Scoring instance with given gap open, gap extend penalties
-    /// and the score function. The clip penalties are set to MIN_SCORE by default
+    /// and the score function. The clip penalties are set to [`MIN_SCORE`](constant.MIN_SCORE.html) by default
     ///
     /// # Arguments
     ///
     /// * `gap_open` - the score for opening a gap (should not be positive)
     /// * `gap_extend` - the score for extending a gap (should not be positive)
-    /// * `match_fn` - function that returns the score for substitutions (also see bio::scores)
-    ///
+    /// * `match_fn` - function that returns the score for substitutions
+    ///    (see also [`bio::alignment::pairwise::Scoring`](struct.Scoring.html))
     pub fn new(gap_open: i32, gap_extend: i32, match_fn: F) -> Self {
         assert!(gap_open <= 0, "gap_open can't be positive");
         assert!(gap_extend <= 0, "gap_extend can't be positive");
@@ -244,18 +279,60 @@ impl<F: MatchFunc> Scoring<F> {
     ///
     /// * `penalty` - Clipping penalty for x (both prefix and suffix, should not be positive)
     ///
-    pub fn xclip(self, penalty: i32) -> Self {
+    /// ```rust
+    /// use bio::alignment::pairwise::{Scoring, MIN_SCORE};
+    /// let scoring = Scoring::from_scores(0, -2, 1, -2).xclip(-5);
+    /// assert!(scoring.xclip_prefix == -5);
+    /// assert!(scoring.yclip_prefix == MIN_SCORE);
+    /// assert!(scoring.xclip_suffix == -5);
+    /// assert!(scoring.yclip_suffix == MIN_SCORE);
+    /// ```
+    pub fn xclip(mut self, penalty: i32) -> Self {
         assert!(penalty <= 0, "Clipping penalty can't be positive");
-        Scoring {
-            gap_open: self.gap_open,
-            gap_extend: self.gap_extend,
-            match_fn: self.match_fn,
-            match_scores: None,
-            xclip_prefix: penalty,
-            xclip_suffix: penalty,
-            yclip_prefix: self.yclip_prefix,
-            yclip_suffix: self.yclip_suffix,
-        }
+        self.xclip_prefix = penalty;
+        self.xclip_suffix = penalty;
+        self
+    }
+
+    /// Sets the prefix clipping penalty for x to the input value
+    ///
+    /// # Arguments
+    ///
+    /// * `penalty` - Prefix clipping penalty for x (should not be positive)
+    ///
+    /// # Example
+    /// ```rust
+    /// use bio::alignment::pairwise::{Scoring, MIN_SCORE};
+    /// let scoring = Scoring::from_scores(0, -2, 1, -2).xclip_prefix(-5);
+    /// assert!(scoring.xclip_prefix == -5);
+    /// assert!(scoring.yclip_prefix == MIN_SCORE);
+    /// assert!(scoring.xclip_suffix == MIN_SCORE);
+    /// assert!(scoring.yclip_suffix == MIN_SCORE);
+    /// ```
+    pub fn xclip_prefix(mut self, penalty: i32) -> Self {
+        assert!(penalty <= 0, "Clipping penalty can't be positive");
+        self.xclip_prefix = penalty;
+        self
+    }
+
+    /// Sets the suffix clipping penalty for x to the input value
+    ///
+    /// # Arguments
+    ///
+    /// * `penalty` - Suffix clipping penalty for x (should not be positive)
+    ///
+    /// ```rust
+    /// use bio::alignment::pairwise::{Scoring, MIN_SCORE};
+    /// let scoring = Scoring::from_scores(0, -2, 1, -2).xclip_suffix(-5);
+    /// assert!(scoring.xclip_prefix == MIN_SCORE);
+    /// assert!(scoring.yclip_prefix == MIN_SCORE);
+    /// assert!(scoring.xclip_suffix == -5);
+    /// assert!(scoring.yclip_suffix == MIN_SCORE);
+    /// ```
+    pub fn xclip_suffix(mut self, penalty: i32) -> Self {
+        assert!(penalty <= 0, "Clipping penalty can't be positive");
+        self.xclip_suffix = penalty;
+        self
     }
 
     /// Sets the prefix and suffix clipping penalties for y to the input value
@@ -264,52 +341,101 @@ impl<F: MatchFunc> Scoring<F> {
     ///
     /// * `penalty` - Clipping penalty for y (both prefix and suffix, should not be positive)
     ///
-    pub fn yclip(self, penalty: i32) -> Self {
+    /// ```rust
+    /// use bio::alignment::pairwise::{Scoring, MIN_SCORE};
+    /// let scoring = Scoring::from_scores(0, -2, 1, -2).yclip(-5);
+    /// assert!(scoring.xclip_prefix == MIN_SCORE);
+    /// assert!(scoring.yclip_prefix == -5);
+    /// assert!(scoring.xclip_suffix == MIN_SCORE);
+    /// assert!(scoring.yclip_suffix == -5);
+    /// ```
+    pub fn yclip(mut self, penalty: i32) -> Self {
         assert!(penalty <= 0, "Clipping penalty can't be positive");
-        Scoring {
-            gap_open: self.gap_open,
-            gap_extend: self.gap_extend,
-            match_fn: self.match_fn,
-            match_scores: None,
-            xclip_prefix: self.xclip_prefix,
-            xclip_suffix: self.xclip_suffix,
-            yclip_prefix: penalty,
-            yclip_suffix: penalty,
-        }
+        self.yclip_prefix = penalty;
+        self.yclip_suffix = penalty;
+        self
+    }
+
+    /// Sets the prefix clipping penalty for y to the input value
+    ///
+    /// # Arguments
+    ///
+    /// * `penalty` - Prefix clipping penalty for y (should not be positive)
+    ///
+    /// ```rust
+    /// use bio::alignment::pairwise::{Scoring, MIN_SCORE};
+    /// let scoring = Scoring::from_scores(0, -2, 1, -2).yclip_prefix(-5);
+    /// assert!(scoring.xclip_prefix == MIN_SCORE);
+    /// assert!(scoring.yclip_prefix == -5);
+    /// assert!(scoring.xclip_suffix == MIN_SCORE);
+    /// assert!(scoring.yclip_suffix == MIN_SCORE);
+    /// ```
+    pub fn yclip_prefix(mut self, penalty: i32) -> Self {
+        assert!(penalty <= 0, "Clipping penalty can't be positive");
+        self.yclip_prefix = penalty;
+        self
+    }
+
+    /// Sets the suffix clipping penalty for y to the input value
+    ///
+    /// # Arguments
+    ///
+    /// * `penalty` - Suffix clipping penalty for y (should not be positive)
+    ///
+    /// ```rust
+    /// use bio::alignment::pairwise::{Scoring, MIN_SCORE};
+    /// let scoring = Scoring::from_scores(0, -2, 1, -2).yclip_suffix(-5);
+    /// assert!(scoring.xclip_prefix == MIN_SCORE);
+    /// assert!(scoring.yclip_prefix == MIN_SCORE);
+    /// assert!(scoring.xclip_suffix == MIN_SCORE);
+    /// assert!(scoring.yclip_suffix == -5);
+    /// ```
+    pub fn yclip_suffix(mut self, penalty: i32) -> Self {
+        assert!(penalty <= 0, "Clipping penalty can't be positive");
+        self.yclip_suffix = penalty;
+        self
     }
 }
 
 /// A generalized Smith-Waterman aligner.
 ///
-/// M(i,j) is the best score such that x[i] and y[j] ends in a match
+/// `M(i,j)` is the best score such that `x[i]` and `y[j]` ends in a match (or substitution)
+/// ```ignore
 ///              .... A   G  x_i
 ///              .... C   G  y_j
-///
-/// I(i,j) is the best score such that x[i] is aligned with a gap
+/// ```
+/// `I(i,j)` is the best score such that `x[i]` is aligned with a gap
+/// ```ignore
 ///              .... A   G  x_i
 ///              .... G  y_j  -
-/// This is interpreted as an insertion into "x" w.r.t reference "y"
+/// ```
+/// This is interpreted as an insertion into `x` w.r.t reference `y`
 ///
-/// D(i,j) is the best score such that y[j] is aligned with a gap
+/// `D(i,j)` is the best score such that `y[j]` is aligned with a gap
+/// ```ignore
 ///              .... A  x_i  -
 ///              .... G   G  y_j
-/// This is interpreted as a deletion from "x" w.r.t reference "y"
+/// ```
+/// This is interpreted as a deletion from `x` w.r.t reference `y`
 ///
-/// S(i,j) is the best score for prefixes x[0..i], y[0..j]
+/// `S(i,j)` is the best score for prefixes `x[0..i]`, `y[0..j]`
 ///
 /// To save space, only two columns of these matrices are stored at
 /// any point - the current column and the previous one. Moreover
-/// M(i,j) is not explicitly stored
+/// `M(i,j)` is not explicitly stored
 ///
-/// Lx is the optimal x suffix clipping lengths from each position of the
+/// `Lx` is the optimal x suffix clipping lengths from each position of the
 /// sequence y
-/// Ly is the optimal y suffix clipping lengths from each position of the
+///
+/// `Ly` is the optimal y suffix clipping lengths from each position of the
 /// sequence x
-/// Sn is the last column of the matrix. This is needed to keep track of
+///
+/// `Sn` is the last column of the matrix. This is needed to keep track of
 /// suffix clipping scores
 ///
-/// traceback - see bio::alignment::pairwise::Traceback
-/// scoring - see bio::alignment::pairwise::Scoring
+/// `traceback` - see [`bio::alignment::pairwise::TracebackCell`](struct.TracebackCell.html)
+///
+/// `scoring` - see [`bio::alignment::pairwise::Scoring`](struct.Scoring.html)
 #[allow(non_snake_case)]
 pub struct Aligner<F: MatchFunc> {
     I: [Vec<i32>; 2],
@@ -332,8 +458,8 @@ impl<F: MatchFunc> Aligner<F> {
     ///
     /// * `gap_open` - the score for opening a gap (should be negative)
     /// * `gap_extend` - the score for extending a gap (should be negative)
-    /// * `match_fn` - function that returns the score for substitutions (also see bio::scores)
-    ///
+    /// * `match_fn` - function that returns the score for substitutions
+    ///    (see also [`bio::alignment::pairwise::Scoring`](struct.Scoring.html))
     pub fn new(gap_open: i32, gap_extend: i32, match_fn: F) -> Self {
         Aligner::with_capacity(
             DEFAULT_ALIGNER_CAPACITY,
@@ -353,8 +479,8 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `n` - the expected size of y
     /// * `gap_open` - the score for opening a gap (should be negative)
     /// * `gap_extend` - the score for extending a gap (should be negative)
-    /// * `match_fn` - function that returns the score for substitutions (also see bio::scores)
-    ///
+    /// * `match_fn` - function that returns the score for substitutions
+    ///    (see also [`bio::alignment::pairwise::Scoring`](struct.Scoring.html))
     pub fn with_capacity(m: usize, n: usize, gap_open: i32, gap_extend: i32, match_fn: F) -> Self {
         assert!(gap_open <= 0, "gap_open can't be positive");
         assert!(gap_extend <= 0, "gap_extend can't be positive");
@@ -376,7 +502,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// # Arguments
     ///
     /// * `scoring` - the scoring struct (see bio::alignment::pairwise::Scoring)
-    ///
     pub fn with_scoring(scoring: Scoring<F>) -> Self {
         Aligner::with_capacity_and_scoring(
             DEFAULT_ALIGNER_CAPACITY,
@@ -393,7 +518,6 @@ impl<F: MatchFunc> Aligner<F> {
     /// * `m` - the expected size of x
     /// * `n` - the expected size of y
     /// * `scoring` - the scoring struct
-    ///
     pub fn with_capacity_and_scoring(m: usize, n: usize, scoring: Scoring<F>) -> Self {
         assert!(scoring.gap_open <= 0, "gap_open can't be positive");
         assert!(scoring.gap_extend <= 0, "gap_extend can't be positive");
@@ -432,7 +556,6 @@ impl<F: MatchFunc> Aligner<F> {
     ///
     /// * `x` - Textslice
     /// * `y` - Textslice
-    ///
     pub fn custom(&mut self, x: TextSlice<'_>, y: TextSlice<'_>) -> Alignment {
         let (m, n) = (x.len(), y.len());
         self.traceback.init(m, n);
@@ -460,6 +583,8 @@ impl<F: MatchFunc> Aligner<F> {
                 self.Ly.extend(repeat(0usize).take(m + 1));
                 self.Sn.clear();
                 self.Sn.extend(repeat(MIN_SCORE).take(m + 1));
+                self.Sn[0] = self.scoring.yclip_suffix;
+                self.Ly[0] = n;
             }
 
             for i in 1..=m {
@@ -506,6 +631,11 @@ impl<F: MatchFunc> Aligner<F> {
 
                 if k == 0 {
                     self.traceback.set(i, 0, tb);
+                }
+                // Track the score if we do suffix clip (y) from here
+                if self.S[k][i] + self.scoring.yclip_suffix > self.Sn[i] {
+                    self.Sn[i] = self.S[k][i] + self.scoring.yclip_suffix;
+                    self.Ly[i] = n;
                 }
             }
         }
@@ -1459,4 +1589,69 @@ mod tests {
         assert_eq!(alignment.operations, [Yclip(6), Match, Match, Match]);
     }
 
+    #[test]
+    fn test_only_clips() {
+        let x = b"GGAAAAAAAAAAAAA";
+        let y = b"TTTTAATTTGTGTAAAAAATAATA";
+        let base_score = Scoring::from_scores(-4, -4, 4, -7);
+        let scoring = Scoring {
+            xclip_prefix: 0,
+            xclip_suffix: 0,
+            yclip_suffix: 0,
+            ..base_score
+        };
+        let mut al = Aligner::with_scoring(scoring);
+        let alignment = al.custom(x, y);
+        assert_eq!(alignment.score, 0);
+    }
+
+    #[test]
+    fn test_zero_score_clips() {
+        let x = b"AA";
+        let y = b"CC";
+        let base_score = Scoring::from_scores(-1, -1, 1, -1);
+        {
+            let scoring = Scoring {
+                xclip_prefix: 0,
+                yclip_prefix: 0,
+                ..base_score.clone()
+            };
+            let mut al = Aligner::with_scoring(scoring);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
+
+        {
+            let scoring = Scoring {
+                xclip_prefix: 0,
+                yclip_suffix: 0,
+                ..base_score.clone()
+            };
+            let mut al = Aligner::with_scoring(scoring);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
+
+        {
+            let scoring = Scoring {
+                xclip_suffix: 0,
+                yclip_prefix: 0,
+                ..base_score.clone()
+            };
+            let mut al = Aligner::with_scoring(scoring);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
+
+        {
+            let scoring = Scoring {
+                xclip_suffix: 0,
+                yclip_suffix: 0,
+                ..base_score.clone()
+            };
+            let mut al = Aligner::with_scoring(scoring);
+            let alignment = al.custom(x, y);
+            assert_eq!(alignment.score, 0);
+        }
+    }
 }
